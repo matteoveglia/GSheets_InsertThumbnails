@@ -39,7 +39,7 @@
 2. Refresh the web page (by clicking the refresh icon or by pressing `Ctrl + R`).
 3. Click on `Custom Menu` in the menu bar.
 4. Select `Insert Images`.
- - On first run, in that Sheet, you may be prompted to authorize access to your Google Drive by the script.
+ - On first run, in that Sheet, you may be prompted to authorise access to your Google Drive by the script.
 5. In the "Folder URL" field, enter the URL of the Google Drive folder containing the images.
 6. In the "Start Row" and "Start Column" fields, enter the starting row and column for the images to be inserted.
 7. Click `Insert Images` to begin the process.
@@ -48,8 +48,8 @@
 ## Notes
 
 - Ensure that the images in the Google Drive folder are accessible.
-- The script might require authorization to access your Google Drive and Google Sheets.
+- The script might require authorisation to access your Google Drive and Google Sheets.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GPLv3 License - see the [LICENSE](LICENSE) file for details.
