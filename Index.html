@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    #spinner {
+      display: none;
+      width: 50px;
+      height: 50px;
+      border: 5px solid lightgray;
+      border-top-color: blue;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <form id="imageForm">
+    <label for="folderUrl">Folder URL:</label><br>
+    <input type="text" id="folderUrl" name="folderUrl"><br>
+    <label for="startRow">Start Row:</label><br>
+    <input type="number" id="startRow" name="startRow"><br>
+    <label for="startCol">Start Column:</label><br>
+    <input type="number" id="startCol" name="startCol"><br><br>
+    <input type="button" id="submitButton" value="Insert Images" onclick="submitForm()">
+  </form>
+  <div id="spinner"></div>
+  <script>
+    function submitForm() {
+      document.getElementById('submitButton').value = 'Stop';
+      document.getElementById('submitButton').onclick = stopScript;
+      document.getElementById('spinner').style.display = 'inline-block';
+
+      const folderUrl = document.getElementById('folderUrl').value;
+      const startRow = document.getElementById('startRow').value;
+      const startCol = document.getElementById('startCol').value;
+
+      google.script.run
+        .withSuccessHandler(resetForm)
+        .insertImagesFromUI(folderUrl, startRow, startCol);
+    }
+
+    function stopScript() {
+      google.script.run.stopImageInsertion();
+      resetForm();
+    }
+
+    function resetForm() {
+      document.getElementById('submitButton').value = 'Insert Images';
+      document.getElementById('submitButton').onclick = submitForm;
+      document.getElementById('spinner').style.display = 'none';
+    }
+  </script>
+</body>
+</html>
