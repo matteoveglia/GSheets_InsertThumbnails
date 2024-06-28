@@ -27,6 +27,7 @@
     .button-container {
       display: flex;
       align-items: center;
+      justify-content: space-between;
       margin-top: 20px;
     }
     input[type="button"] {
@@ -113,17 +114,19 @@
 <body>
   <form id="imageForm">
     <label for="folderUrl">Folder URL:</label>
-    <input type="text" id="folderUrl" name="folderUrl" placeholder="Enter Google Drive folder URL">
+    <input type="text" id="folderUrl" name="folderUrl" placeholder="Enter Google Drive folder URL" required>
     
     <label for="startRow">Start Row:</label>
-    <input type="number" id="startRow" name="startRow" placeholder="Enter start row number">
+    <input type="number" id="startRow" name="startRow" placeholder="Enter start row number" required>
     
     <label for="startCol">Start Column:</label>
-    <input type="number" id="startCol" name="startCol" placeholder="Enter start column number">
+    <input type="number" id="startCol" name="startCol" placeholder="Enter start column number" required>
     
     <div class="button-container">
       <input type="button" id="submitButton" value="Insert Images" onclick="submitForm()">
       <div id="mainSpinner" class="spinner"></div>
+      <input type="button" id="previewButton" value="Preview Sort Order" onclick="previewSortOrder()">
+      <div id="previewSpinner" class="spinner"></div>
     </div>
   </form>
   <ul class="checklist">
@@ -143,15 +146,20 @@
   
   <script>
     function submitForm() {
+      const folderUrl = document.getElementById('folderUrl').value;
+      const startRow = document.getElementById('startRow').value;
+      const startCol = document.getElementById('startCol').value;
+
+      if (!folderUrl || !startRow || !startCol) {
+        alert('Please fill in all the fields.');
+        return;
+      }
+
       disableForm(true);
       showSpinner('mainSpinner');
       document.getElementById('submitButton').value = 'Stop';
       document.getElementById('submitButton').onclick = stopScript;
       updateChecklist('step1', 'in-progress');
-
-      const folderUrl = document.getElementById('folderUrl').value;
-      const startRow = document.getElementById('startRow').value;
-      const startCol = document.getElementById('startCol').value;
 
       google.script.run
         .withSuccessHandler(function() {
@@ -195,6 +203,28 @@
           alert('Failed to initialize process');
         })
         .initializeProcess(folderUrl, startRow, startCol);
+    }
+
+    function previewSortOrder() {
+      const folderUrl = document.getElementById('folderUrl').value;
+
+      if (!folderUrl) {
+        alert('Please enter the folder URL.');
+        return;
+      }
+      showSpinner('previewSpinner');
+      google.script.run
+        .withSuccessHandler(function(sortedFiles) {
+          resetForm();
+          hideSpinner('previewSpinner');
+          alert('Sorted Files:\n' + sortedFiles.join('\n'));
+        })
+        .withFailureHandler(function() {
+          resetForm();
+          hideSpinner('previewSpinner');
+          alert('Failed to preview sorted files');
+        })
+        .collectAndSortFiles(folderUrl);
     }
 
     function stopScript() {
@@ -246,8 +276,7 @@
     function showModal(imagesInserted) {
       const modal = document.getElementById('myModal');
       const message = document.getElementById('modalMessage');
-      //message.innerText = `Process completed with ${imagesInserted} images inserted.`;
-      message.innerText = `Process complete`;
+      message.innerText = `Process completed with ${imagesInserted} images inserted.`;
       modal.style.display = 'block';
     }
 

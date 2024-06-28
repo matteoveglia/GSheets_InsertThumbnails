@@ -1,4 +1,7 @@
 function initializeProcess(folderUrl, startRow, startCol) {
+  if (!folderUrl || !startRow || !startCol) {
+    throw new Error('Invalid input: folderUrl, startRow, and startCol are required.');
+  }
   PropertiesService.getScriptProperties().setProperty('shouldStop', 'false'); // Reset stop flag
   PropertiesService.getScriptProperties().setProperty('folderUrl', folderUrl);
   PropertiesService.getScriptProperties().setProperty('startRow', startRow);
@@ -8,6 +11,9 @@ function initializeProcess(folderUrl, startRow, startCol) {
 }
 
 function collectFiles(folderUrl) {
+  if (!folderUrl) {
+    throw new Error('Invalid input: folderUrl is required.');
+  }
   Logger.log('Collecting folder URL');
   var folderId = folderUrl.match(/[-\w]{25,}/)[0]; // Extract folder ID from URL
   var folder = DriveApp.getFolderById(folderId);
@@ -23,10 +29,7 @@ function collectFiles(folderUrl) {
     }
     var file = files.next();
     var fileName = file.getName();
-    var numberPart = fileName.match(/\d+/); // Extract numbers from the filename
-    if (numberPart) {
-      fileList.push({ fileId: file.getId(), number: parseInt(numberPart[0], 10) });
-    }
+    fileList.push({ fileId: file.getId(), name: fileName });
   }
   PropertiesService.getScriptProperties().setProperty('fileList', JSON.stringify(fileList));
   Logger.log('Collected ' + fileList.length + ' files');
@@ -37,37 +40,39 @@ function sortFiles() {
   Logger.log('Sorting files');
   var fileList = JSON.parse(PropertiesService.getScriptProperties().getProperty('fileList'));
   fileList.sort(function(a, b) {
-    return a.number - b.number;
+    return a.name.localeCompare(b.name);
   });
   PropertiesService.getScriptProperties().setProperty('fileList', JSON.stringify(fileList));
   Logger.log('Files sorted');
   return true;
 }
 
-function insertImagesFromUI() {
-  Logger.log('UI Parser Started');
-  var folderUrl = PropertiesService.getScriptProperties().getProperty('folderUrl');
-  var startRow = parseInt(PropertiesService.getScriptProperties().getProperty('startRow'));
-  var startCol = parseInt(PropertiesService.getScriptProperties().getProperty('startCol'));
-  Logger.log('UI input received: folderUrl=' + folderUrl + ', startRow=' + startRow + ', startCol=' + startCol);
-  
-  var folderId = folderUrl.match(/[-\w]{25,}/)[0];
-  insertResizedImages(folderId, startRow, startCol);
-  Logger.log('UI Parser Completed');
-  return true;
+function previewSortedFiles() {
+  Logger.log('Previewing sorted files');
+  var fileList = JSON.parse(PropertiesService.getScriptProperties().getProperty('fileList'));
+  return fileList.map(function(file) {
+    return file.name;
+  });
 }
 
-function insertResizedImages(folderId, startRow, startCol) {
-  Logger.log('Image Inserter Started');
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+function insertImagesFromUI() {
+  var startRow = parseInt(PropertiesService.getScriptProperties().getProperty('startRow'), 10);
+  var startCol = parseInt(PropertiesService.getScriptProperties().getProperty('startCol'), 10);
+
+  if (isNaN(startRow) || isNaN(startCol)) {
+    throw new Error('Invalid input: startRow and startCol must be numbers.');
+  }
+
+  Logger.log('UI Parser Started');
+  var folderUrl = PropertiesService.getScriptProperties().getProperty('folderUrl');
   var fileList = JSON.parse(PropertiesService.getScriptProperties().getProperty('fileList'));
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+  var rowIndex = startRow;
+  var colIndex = startCol;
   var totalFiles = fileList.length;
-  Logger.log('Total files to process: ' + totalFiles);
 
-  var rowIndex = startRow; // Starting row
-  var colIndex = startCol; // Starting column
-
-  for (var i = 0; i < fileList.length; i++) {
+  for (var i = 0; i < totalFiles; i++) {
     if (PropertiesService.getScriptProperties().getProperty('shouldStop') === 'true') {
       Logger.log('Script stopped by user during image insertion');
       return;
@@ -79,7 +84,7 @@ function insertResizedImages(folderId, startRow, startCol) {
       var resizedImage = ImgApp.doResize(fileObj.fileId, 800); // Adjust width as necessary
       var blob = resizedImage.blob;
       var imageData = "data:image/jpeg;base64," + Utilities.base64Encode(blob.getBytes());
-      insertCellImage(sheet.getRange(rowIndex, colIndex), imageData, "Image " + (i + 1), "Image from frame " + fileObj.number); // Insert image into cell
+      insertCellImage(sheet.getRange(rowIndex, colIndex), imageData, "Image " + (i + 1), "Image from frame " + fileObj.name); // Insert image into cell
 
       Logger.log('Inserted image ' + (i + 1) + ' of ' + totalFiles + ' at row ' + rowIndex);
       rowIndex++;
@@ -124,4 +129,10 @@ function onOpen() {
 function resetForm() {
   var ui = SpreadsheetApp.getUi();
   //ui.alert('Image insertion completed or stopped by user.');
+}
+
+function collectAndSortFiles(folderUrl) {
+  collectFiles(folderUrl);
+  sortFiles();
+  return previewSortedFiles();
 }
