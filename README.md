@@ -6,7 +6,7 @@
 
 ## Screenshot
 
-<img src="image.png" width="400" />
+<img src="image.png" width="450" />
 
 ## Installation
 
