@@ -39,9 +39,25 @@ function collectFiles(folderUrl) {
 function sortFiles() {
   Logger.log('Sorting files');
   var fileList = JSON.parse(PropertiesService.getScriptProperties().getProperty('fileList'));
-  fileList.sort(function(a, b) {
-    return a.name.localeCompare(b.name);
-  });
+  
+  // Natural sort comparator
+  function naturalCompare(a, b) {
+    var ax = [], bx = [];
+    a.name.replace(/(\d+)|(\D+)/g, function(_, $1, $2) { ax.push([$1 || Infinity, $2 || ""]) });
+    b.name.replace(/(\d+)|(\D+)/g, function(_, $1, $2) { bx.push([$1 || Infinity, $2 || ""]) });
+    
+    while(ax.length && bx.length) {
+      var an = ax.shift();
+      var bn = bx.shift();
+      var nn = (an[0] - bn[0]) || an[1].localeCompare(bn[1]);
+      if(nn) return nn;
+    }
+    
+    return ax.length - bx.length;
+  }
+  
+  fileList.sort(naturalCompare);
+  
   PropertiesService.getScriptProperties().setProperty('fileList', JSON.stringify(fileList));
   Logger.log('Files sorted');
   return true;
@@ -132,7 +148,12 @@ function resetForm() {
 }
 
 function collectAndSortFiles(folderUrl) {
-  collectFiles(folderUrl);
-  sortFiles();
-  return previewSortedFiles();
+  try {
+    collectFiles(folderUrl);
+    sortFiles();
+    return previewSortedFiles();
+  } catch (error) {
+    Logger.log('Error in collectAndSortFiles: ' + error.message);
+    return ['Error: ' + error.message];
+  }
 }

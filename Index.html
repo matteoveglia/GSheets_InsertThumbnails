@@ -92,10 +92,25 @@
     }
     .modal-content {
       background-color: #fefefe;
-      margin: 5% auto;
+      margin: auto;
       padding: 20px;
       border: 1px solid #888;
       width: 80%;
+      max-height: 80vh;
+      overflow-y: auto;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+    #modalMessage ol {
+    max-height: 60vh;
+    overflow-y: auto;
+    padding-left: 40px; /* Increased padding */
+    }
+    #modalMessage li {
+      margin-bottom: 5px;
+      padding-left: 10px; /* Added padding */
     }
     .close {
       color: #aaa;
@@ -130,7 +145,7 @@
     </div>
   </form>
   <ul class="checklist">
-    <li id="step1">Initialising process</li>
+    <li id="step1">Initializing process</li>
     <li id="step2">Collecting files from folder</li>
     <li id="step3">Sorting files</li>
     <li id="step4">Inserting images into sheet</li>
@@ -140,7 +155,7 @@
   <div id="myModal" class="modal">
     <div class="modal-content">
       <span class="close" onclick="closeModal()">&times;</span>
-      <p id="modalMessage"></p>
+      <div id="modalMessage"></div>
     </div>
   </div>
   
@@ -200,7 +215,7 @@
         })
         .withFailureHandler(function() {
           resetForm();
-          alert('Failed to initialise process');
+          alert('Failed to initialize process');
         })
         .initializeProcess(folderUrl, startRow, startCol);
     }
@@ -217,14 +232,44 @@
         .withSuccessHandler(function(sortedFiles) {
           resetForm();
           hideSpinner('previewSpinner');
-          alert('Sorted Files:\n' + sortedFiles.join('\n'));
+          displaySortedFiles(sortedFiles);
         })
-        .withFailureHandler(function() {
+        .withFailureHandler(function(error) {
           resetForm();
           hideSpinner('previewSpinner');
-          alert('Failed to preview sorted files');
+          alert('Failed to preview sorted files: ' + error);
         })
         .collectAndSortFiles(folderUrl);
+    }
+
+    function displaySortedFiles(sortedFiles) {
+      const modal = document.getElementById('myModal');
+      const modalContent = document.querySelector('.modal-content');
+      const message = document.getElementById('modalMessage');
+      
+      // Clear previous content
+      message.innerHTML = '';
+      
+      // Add title
+      const title = document.createElement('h3');
+      title.textContent = 'Sorted Files';
+      message.appendChild(title);
+      
+      // Add file list
+      const fileList = document.createElement('ol');
+      sortedFiles.forEach(file => {
+        const li = document.createElement('li');
+        li.textContent = file;
+        fileList.appendChild(li);
+      });
+      message.appendChild(fileList);
+      
+      // Add file count
+      const count = document.createElement('p');
+      count.textContent = `Total files: ${sortedFiles.length}`;
+      message.appendChild(count);
+      
+      modal.style.display = 'block';
     }
 
     function stopScript() {
