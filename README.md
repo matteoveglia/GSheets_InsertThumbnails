@@ -23,7 +23,7 @@
 ### Step 3: Add the Main Code
 
 1. In the Apps Script editor, delete any code in the `Code.gs` file under the `Files` section.
-2. Copy and paste the code from the [Code.gs](Code.gs) file in this repo into the `Code.gs` file:
+2. Copy and paste the code from the [Code.gs](Code.gs) file in this repo into the `Code.gs` file.
 3. Save the script by clicking the disk icon or by pressing `Ctrl + S`.
 
 ### Step 4: Add the Script Dependencies
@@ -37,7 +37,7 @@
 ### Step 5: Create the HTML UI File
 
 1. In the Apps Script editor, click on the `+` button next to the `Files` section.
-2. Select `HTML` and name the file `Index`.
+2. Select `HTML` and name the file `index`. (must be lowercase, do not include an extension).
 3. Copy and paste the code from the [Index.html](Index.html) file in this repo into the `Index.html` file:
 4. Save the HTML file by clicking the disk icon or by pressing `Ctrl + S`.
 
