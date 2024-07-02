@@ -189,35 +189,52 @@
                   updateChecklist('step3', 'completed');
                   updateChecklist('step4', 'in-progress');
                   google.script.run
-                    .withSuccessHandler(function(imagesInserted) {
-                      updateChecklist('step4', 'completed');
-                      updateChecklist('step5', 'completed');
-                      resetForm();
-                      showModal(imagesInserted);
-                    })
-                    .withFailureHandler(function() {
-                      resetForm();
-                      alert('Failed to insert images');
-                    })
-                    .insertImagesFromUI();
+                    .withSuccessHandler(handleImageInsertionResult)
+                    .withFailureHandler(handleImageInsertionError)
+                    .handleImageInsertion();
                 })
-                .withFailureHandler(function() {
+                .withFailureHandler(function(error) {
                   resetForm();
-                  alert('Failed to sort files');
+                  showModal('Failed to sort files: ' + error);
                 })
                 .sortFiles();
             })
-            .withFailureHandler(function() {
+            .withFailureHandler(function(error) {
               resetForm();
-              alert('Failed to collect files');
+              showModal('Failed to collect files: ' + error);
             })
             .collectFiles(folderUrl);
         })
-        .withFailureHandler(function() {
+        .withFailureHandler(function(error) {
           resetForm();
-          alert('Failed to initialize process');
+          showModal('Failed to initialize process: ' + error);
         })
         .initializeProcess(folderUrl, startRow, startCol);
+    }
+
+    function handleImageInsertionResult(result) {
+      console.log("Image insertion result:", result);
+      if (result === 'completed') {
+        updateChecklist('step4', 'completed');
+        updateChecklist('step5', 'completed');
+        resetForm();
+        showModal('Process completed. All images inserted.');
+      } else if (result === 'continuing') {
+        updateChecklist('step4', 'in-progress');
+        showModal('Batch completed. Processing will continue automatically.');
+      } else if (result === 'stopped') {
+        resetForm();
+        showModal('Process stopped by user.');
+      } else {
+        resetForm();
+        showModal('An error occurred during image insertion: ' + result);
+      }
+    }
+
+    function handleImageInsertionError(error) {
+      console.error("Image insertion error:", error);
+      resetForm();
+      showModal('Failed to insert images: ' + error);
     }
 
     function previewSortOrder() {
@@ -273,8 +290,14 @@
     }
 
     function stopScript() {
-      google.script.run.stopImageInsertion();
-      resetForm();
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result) {
+            resetForm();
+            showModal('Process stopped by user.');
+          }
+        })
+        .stopImageInsertion();
     }
 
     function resetForm() {
@@ -318,10 +341,10 @@
       document.getElementById(spinnerId).style.display = 'none';
     }
 
-    function showModal(imagesInserted) {
+    function showModal(message) {
       const modal = document.getElementById('myModal');
-      const message = document.getElementById('modalMessage');
-      message.innerText = `Process completed with ${imagesInserted} images inserted.`;
+      const modalMessage = document.getElementById('modalMessage');
+      modalMessage.innerText = message;
       modal.style.display = 'block';
     }
 
