@@ -34,7 +34,7 @@ This Google Apps Script allows users to insert images from a specified Google Dr
 
 1. In the Apps Script editor, click on the `+` button next to the `Files` section.
 2. Select `HTML` and name the file `index`. (must be lowercase, do not include an extension).
-3. Copy and paste the code from the [index.html](index.html) file in this repo into the `Index.html` file:
+3. Copy and paste the code from the [index.html](Index.html) file in this repo into the `Index.html` file:
 4. Save the HTML file by clicking the disk icon or by pressing `Ctrl + S` (`Cmd + S` on Mac).
 
 ### Step 5: Run the Add-on
