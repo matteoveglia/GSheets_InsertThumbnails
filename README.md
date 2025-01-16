@@ -5,7 +5,7 @@ This Google Apps Script allows users to insert images from a specified Google Dr
 ###  Features
 
 - **Preview Sort Order**: Before inserting images, you can preview the order in which files will be sorted.
-- **Batch Processing**: The script processes images in batches to handle large numbers of files efficiently, 75 images at a time.
+- **Batch Processing**: The script processes images in batches to handle large numbers of files efficiently, 10 images at a time.
 - **Progress Tracking**: A checklist shows the current stage of the process.
 - **Resizing**: Images are automatically resized to maintain quality while keeping file sizes manageable.
 
@@ -40,7 +40,7 @@ This Google Apps Script allows users to insert images from a specified Google Dr
 ### Step 5: Run the Add-on
 
 1. Go back to your Google Sheet, you can close the Apps Script editor tab if you wish.
-2. Refresh the web page (by clicking the refresh icon or by pressing `Ctrl + R` or `Cmd + R` on Mac).
+2. Refresh the web page by clicking the refresh icon or by pressing `Ctrl + R` (`Cmd + R` on Mac).
 3. Click on the new `Custom Tools` button in the menu bar.
 4. Select `Insert Thumbnails from GDrive`.
  - On first run, in that Sheet, you may be prompted to authorise access to your Google Drive by the script (see [Security Prompt](#Security-Prompt)).
@@ -50,7 +50,8 @@ This Google Apps Script allows users to insert images from a specified Google Dr
 7. Click `Insert Images` to begin the process.
 - Once the script starts running, you'll be able to press Stop to stop the script.
 - Additionally as the script runs it'll show a checklist of progress under the Stop button.
-- **NOTE: The script will NOT stop running if you close the window, only if you press the Stop button.**
+
+**NOTE: The script will NOT stop running if you close the window, only if you press the Stop button.**
 
 ## Security Prompt
 #### On first run, in that Sheet, you may be prompted to authorise access to your Google Drive by the script.
