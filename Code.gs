@@ -1,32 +1,51 @@
+const BATCH_SIZE = 10;
+const MAX_IMAGE_WIDTH = 800;
+const SCRIPT_PROPERTIES = PropertiesService.getScriptProperties();
+const CHUNK_SIZE = 50;
+const MAX_EXECUTION_TIME = 4.5 * 60 * 1000;
+const START_TIME = Date.now();
+const CACHE_EXPIRATION = 21600;
+const CACHE = CacheService.getScriptCache();
+const TRIGGER_DELAY = 500;
+
+function isTimeUp() {
+  return Date.now() - START_TIME > MAX_EXECUTION_TIME;
+}
+
+function getCachedImage(fileId) {
+  return CACHE.get('img_' + fileId);
+}
+
+function setCachedImage(fileId, imageData) {
+  CACHE.put('img_' + fileId, imageData, CACHE_EXPIRATION);
+}
+
 function initializeProcess(folderUrl, startRow, startCol) {
   if (!folderUrl || !startRow || !startCol) {
     throw new Error('Invalid input: folderUrl, startRow, and startCol are required.');
   }
-  var spreadsheetId = SpreadsheetApp.getActiveSpreadsheet().getId();
-  var sheetId = SpreadsheetApp.getActiveSheet().getSheetId();
-  
-  PropertiesService.getScriptProperties().setProperties({
+  const props = {
     'shouldStop': 'false',
     'folderUrl': folderUrl,
     'startRow': startRow,
     'startCol': startCol,
-    'spreadsheetId': spreadsheetId,
-    'sheetId': sheetId,
-    'lastProcessedIndex': '-1'
-  });
+    'spreadsheetId': SpreadsheetApp.getActiveSpreadsheet().getId(),
+    'sheetId': SpreadsheetApp.getActiveSheet().getSheetId(),
+    'lastProcessedIndex': '-1',
+    'processingBatch': 'false'
+  };
   
-  Logger.log('Initialization started: folderUrl=' + folderUrl + ', startRow=' + startRow + ', startCol=' + startCol + ', spreadsheetId=' + spreadsheetId + ', sheetId=' + sheetId);
+  SCRIPT_PROPERTIES.setProperties(props);
+  Logger.log('Initialization complete with properties: ' + JSON.stringify(props));
   return true;
 }
 
-function previewSortOrder() {
-  // Reset necessary properties
-  PropertiesService.getScriptProperties().setProperty('shouldStop', 'false');
-  PropertiesService.getScriptProperties().setProperty('lastProcessedIndex', '-1');
+function previewSortOrder(folderUrl) { 
+  SCRIPT_PROPERTIES.setProperty('shouldStop', 'false');
+  SCRIPT_PROPERTIES.setProperty('lastProcessedIndex', '-1');
   
-  var folderUrl = PropertiesService.getScriptProperties().getProperty('folderUrl');
   if (!folderUrl) {
-    throw new Error('Folder URL not set. Please initialize the process first.');
+    throw new Error('Folder URL is required');
   }
   
   Logger.log('Previewing sort order for folder: ' + folderUrl);
@@ -39,148 +58,334 @@ function collectFiles(folderUrl) {
   if (!folderUrl) {
     throw new Error('Invalid input: folderUrl is required.');
   }
-  Logger.log('Collecting folder URL');
-  var folderId = folderUrl.match(/[-\w]{25,}/)[0]; // Extract folder ID from URL
-  var folder = DriveApp.getFolderById(folderId);
-  Logger.log('Collecting files from folder');
-  var files = folder.getFiles();
-  Logger.log('Files collected');
-  var fileList = [];
+  
+  Logger.log('Starting collectFiles with URL: ' + folderUrl);
+  
+  Logger.log('Current properties at start of collectFiles: ' + JSON.stringify(SCRIPT_PROPERTIES.getProperties()));
 
-  while (files.hasNext()) {
-    if (PropertiesService.getScriptProperties().getProperty('shouldStop') === 'true') {
-      Logger.log('Script stopped by user during file collection');
-      return;
+  try {
+    const folderIdMatch = folderUrl.match(/[-\w]{25,}/);
+    if (!folderIdMatch) {
+      Logger.log('Failed to extract folder ID from URL');
+      throw new Error('Invalid folder URL format');
     }
-    var file = files.next();
-    var fileName = file.getName();
-    fileList.push({ fileId: file.getId(), name: fileName });
+    
+    const folderId = folderIdMatch[0];
+    Logger.log('Extracted folder ID: ' + folderId);
+    
+    let folder;
+    try {
+      folder = DriveApp.getFolderById(folderId);
+      Logger.log('Successfully accessed folder: ' + folder.getName());
+    } catch (folderError) {
+      Logger.log('Error accessing folder: ' + folderError.toString());
+      throw new Error('Could not access the specified folder. Please check the URL and permissions.');
+    }
+    
+    let files;
+    try {
+      files = folder.getFiles();
+      Logger.log('Successfully got files iterator');
+    } catch (filesError) {
+      Logger.log('Error getting files: ' + filesError.toString());
+      throw new Error('Could not retrieve files from the folder');
+    }
+    
+    const fileList = [];
+    let fileCount = 0;
+    
+    while (files.hasNext()) {
+      if (isTimeUp()) {
+        Logger.log('Approaching time limit during file collection');
+        if (fileList.length > 0) {
+          SCRIPT_PROPERTIES.setProperty('fileList', JSON.stringify(fileList));
+          SCRIPT_PROPERTIES.setProperty('partialCollection', 'true');
+          ScriptApp.newTrigger('continueFileCollection')
+            .timeBased()
+            .after(1000)
+            .create();
+        }
+        return fileList;
+      }
+
+      if (SCRIPT_PROPERTIES.getProperty('shouldStop') === 'true') {
+        Logger.log('Script stopped by user during file collection');
+        return null;
+      }
+      
+      const chunk = [];
+      while (files.hasNext() && chunk.length < CHUNK_SIZE) {
+        const file = files.next();
+        chunk.push({
+          fileId: file.getId(),
+          name: file.getName()
+        });
+        fileCount++;
+      }
+      
+      fileList.push(...chunk);
+      
+      if (fileCount % CHUNK_SIZE === 0) {
+        SCRIPT_PROPERTIES.setProperty('fileList', JSON.stringify(fileList));
+      }
+      
+      Utilities.sleep(20);
+    }
+    
+    Logger.log('Total files collected: ' + fileCount);
+    
+    if (fileList.length === 0) {
+      Logger.log('No files found in folder');
+      throw new Error('No files found in the specified folder');
+    }
+    
+    SCRIPT_PROPERTIES.setProperty('fileList', JSON.stringify(fileList));
+    Logger.log('Successfully stored file list with ' + fileList.length + ' files');
+    
+    return fileList;
+    
+  } catch (error) {
+    Logger.log('Final error in collectFiles: ' + error.toString());
+    throw error;
   }
-  PropertiesService.getScriptProperties().setProperty('fileList', JSON.stringify(fileList));
-  Logger.log('Collected ' + fileList.length + ' files');
-  return fileList;
+}
+
+function continueFileCollection() {
+  try {
+    const props = SCRIPT_PROPERTIES.getProperties();
+    const folderUrl = props.folderUrl;
+    const existingFiles = JSON.parse(props.fileList || '[]');
+    
+    const newFiles = collectFiles(folderUrl);
+    if (newFiles) {
+      const combinedFiles = existingFiles.concat(newFiles);
+      SCRIPT_PROPERTIES.setProperty('fileList', JSON.stringify(combinedFiles));
+    }
+    
+    if (props.partialCollection !== 'true') {
+      sortFiles();
+    }
+  } catch (error) {
+    Logger.log('Error in continueFileCollection: ' + error.toString());
+    cleanupAfterCompletion();
+  }
 }
 
 function sortFiles() {
-  Logger.log('Sorting files');
-  var fileList = JSON.parse(PropertiesService.getScriptProperties().getProperty('fileList'));
+  Logger.log('Starting sortFiles function');
   
-  // Natural sort comparator
-  function naturalCompare(a, b) {
-    var ax = [], bx = [];
-    a.name.replace(/(\d+)|(\D+)/g, function(_, $1, $2) { ax.push([$1 || Infinity, $2 || ""]) });
-    b.name.replace(/(\d+)|(\D+)/g, function(_, $1, $2) { bx.push([$1 || Infinity, $2 || ""]) });
+  try {
+    const fileListStr = SCRIPT_PROPERTIES.getProperty('fileList');
+    Logger.log('Retrieved fileList string: ' + (fileListStr ? 'non-null' : 'null'));
     
-    while(ax.length && bx.length) {
-      var an = ax.shift();
-      var bn = bx.shift();
-      var nn = (an[0] - bn[0]) || an[1].localeCompare(bn[1]);
-      if(nn) return nn;
+    if (!fileListStr) {
+      throw new Error('No file list found in properties');
     }
     
-    return ax.length - bx.length;
+    let fileList = JSON.parse(fileListStr);
+    Logger.log('Parsed fileList, length: ' + fileList.length);
+    
+    if (!Array.isArray(fileList)) {
+      throw new Error('File list is not an array');
+    }
+    
+    fileList = fileList.filter(file => file && file.name);
+    Logger.log('Filtered fileList, new length: ' + fileList.length);
+    
+    function naturalCompare(a, b) {
+      if (!a || !b || !a.name || !b.name) {
+        Logger.log('Invalid comparison objects:', a, b);
+        return 0;
+      }
+      
+      try {
+        let ax = [], bx = [];
+        
+        a.name.replace(/(\d+)|(\D+)/g, function(_, $1, $2) { 
+          ax.push([$1 || Infinity, $2 || ""]) 
+        });
+        
+        b.name.replace(/(\d+)|(\D+)/g, function(_, $1, $2) { 
+          bx.push([$1 || Infinity, $2 || ""]) 
+        });
+        
+        while(ax.length && bx.length) {
+          var an = ax.shift();
+          var bn = bx.shift();
+          var nn = (an[0] - bn[0]) || an[1].localeCompare(bn[1]);
+          if(nn) return nn;
+        }
+        
+        return ax.length - bx.length;
+      } catch (e) {
+        Logger.log('Error in comparison:', e);
+        return 0;
+      }
+    }
+    
+    const chunkSize = 1000;
+    for (let i = 0; i < fileList.length; i += chunkSize) {
+      const chunk = fileList.slice(i, i + chunkSize);
+      chunk.sort(naturalCompare);
+      fileList.splice(i, chunk.length, ...chunk);
+      
+      if (i + chunkSize < fileList.length) {
+        Utilities.sleep(50);
+      }
+    }
+    
+    Logger.log('Sort completed successfully');
+    
+    SCRIPT_PROPERTIES.setProperty('fileList', JSON.stringify(fileList));
+    return true;
+    
+  } catch (error) {
+    Logger.log('Error in sortFiles: ' + error.message);
+    throw error;
   }
-  
-  fileList.sort(naturalCompare);
-  
-  PropertiesService.getScriptProperties().setProperty('fileList', JSON.stringify(fileList));
-  Logger.log('Files sorted');
-  return true;
 }
 
 function previewSortedFiles() {
   Logger.log('Previewing sorted files');
-  var fileList = JSON.parse(PropertiesService.getScriptProperties().getProperty('fileList'));
+  var fileList = JSON.parse(SCRIPT_PROPERTIES.getProperty('fileList'));
   return fileList.map(function(file) {
     return file.name;
   });
 }
 
-function continueImageInsertion() {
-  Logger.log('Continuing image insertion');
-  var result = insertImagesFromUI();
-  if (result === true) {
-    // All images have been processed
-    Logger.log('All images processed. Cleaning up.');
-    cleanupAfterCompletion();
-  } else if (result === false) {
-    // More images to process, schedule next batch
-    Logger.log('Scheduling next batch');
-    ScriptApp.newTrigger('continueImageInsertion')
-      .timeBased()
-      .after(1000) // Wait 1 second before next execution
-      .create();
-  } else {
-    // An error occurred
-    Logger.log('Error occurred during image insertion: ' + result);
-    cleanupAfterCompletion();
+function cleanupAfterCompletion() {
+  try {
+    cleanupExistingTriggers();
+    SCRIPT_PROPERTIES.deleteAllProperties();
+    if (CACHE) {
+      CACHE.removeAll(['img_*']);
+    }
+    Logger.log('Cleanup completed successfully');
+  } catch (error) {
+    Logger.log('Error during cleanup: ' + error.message);
+  } finally {
+    // Ensure these flags are cleared even if there's an error
+    SCRIPT_PROPERTIES.setProperty('processingBatch', 'false');
+    SCRIPT_PROPERTIES.setProperty('shouldStop', 'false');
   }
 }
 
-function cleanupAfterCompletion() {
-  var triggers = ScriptApp.getProjectTriggers();
-  for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() == 'handleImageInsertion') {
-      ScriptApp.deleteTrigger(triggers[i]);
-    }
+function createContinuationPoint() {
+  if (SCRIPT_PROPERTIES.getProperty('shouldStop') === 'true') {
+    Logger.log('Process stopped, skipping continuation');
+    return;
   }
-  // Delete all properties
-  PropertiesService.getScriptProperties().deleteAllProperties();
-  Logger.log('Script complete, all properties deleted for new run.');
+
+  const html = HtmlService.createHtmlOutput(`
+    <html>
+      <head>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 10px;
+            color: #333;
+          }
+          .message {
+            font-size: 14px;
+            line-height: 1.4;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="message">
+          As there are more than 10 images batch mode has been activated. Processing will continue automatically.
+        </div>
+        <script>
+          window.onload = function() {
+            google.script.run
+              .withSuccessHandler(function() {
+                google.script.host.close();
+              })
+              .withFailureHandler(function(error) {
+                console.error(error);
+                google.script.host.close();
+              })
+              .handleImageInsertion();
+          }
+        </script>
+      </body>
+    </html>
+  `)
+  .setTitle('Batch Mode Activated')
+  .setWidth(400)
+  .setHeight(80);
+
+  SpreadsheetApp.getActiveSpreadsheet().show(html);
 }
 
 function handleImageInsertion() {
   try {
-    var result = insertImagesFromUI();
-    Logger.log("handleImageInsertion result: " + result);
+    // Check stop flag first
+    if (SCRIPT_PROPERTIES.getProperty('shouldStop') === 'true') {
+      Logger.log('Process is stopped, skipping execution');
+      return 'stopped';
+    }
+
+    const processingBatch = SCRIPT_PROPERTIES.getProperty('processingBatch');
+    Logger.log('Current processing batch status: ' + processingBatch);
+    
+    if (processingBatch === 'true') {
+      Logger.log('Another batch is currently processing, skipping this execution');
+      return 'skipped';
+    }
+
+    SCRIPT_PROPERTIES.setProperty('processingBatch', 'true');
+    Logger.log('Set processingBatch to true');
+
+    cleanupExistingTriggers();
+    
+    const result = insertImagesFromUI();
+    Logger.log('insertImagesFromUI result: ' + result);
+    
+    if (result === false) {
+      SCRIPT_PROPERTIES.setProperty('processingBatch', 'false');
+      Utilities.sleep(100); // Small delay before next batch
+      createContinuationPoint();
+      return 'continuing';
+    }
+    
     if (result === true) {
-      // All images have been processed
-      Logger.log('All images processed. Cleaning up.');
       cleanupAfterCompletion();
       return 'completed';
-    } else if (result === false) {
-      // More images to process, schedule next batch
-      Logger.log('Scheduling next batch');
-      ScriptApp.newTrigger('handleImageInsertion')
-        .timeBased()
-        .after(1000) // Wait 1 second before next execution
-        .create();
-      return 'continuing';
-    } else if (result === 'stopped') {
-      // Script was stopped by user
-      Logger.log('Script stopped by user. Cleaning up.');
+    }
+    
+    if (result === 'stopped') {
       cleanupAfterStop();
       return 'stopped';
-    } else {
-      // Unexpected result
-      Logger.log('Unexpected result from insertImagesFromUI: ' + result);
-      cleanupAfterCompletion();
-      return 'error';
     }
+
+    SCRIPT_PROPERTIES.setProperty('processingBatch', 'false');
+    return 'error';
   } catch (error) {
     Logger.log('Error in handleImageInsertion: ' + error.message);
+    SCRIPT_PROPERTIES.setProperty('processingBatch', 'false');
     cleanupAfterCompletion();
     return 'error: ' + error.message;
   }
 }
 
 function insertImagesFromUI() {
-  var startRow = parseInt(PropertiesService.getScriptProperties().getProperty('startRow'), 10);
-  var startCol = parseInt(PropertiesService.getScriptProperties().getProperty('startCol'), 10);
-  var batchSize = 75; // Process 75 images per execution
-  var lastProcessedIndex = parseInt(PropertiesService.getScriptProperties().getProperty('lastProcessedIndex') || '-1', 10);
-  var spreadsheetId = PropertiesService.getScriptProperties().getProperty('spreadsheetId');
-  var sheetId = PropertiesService.getScriptProperties().getProperty('sheetId');
+  const props = SCRIPT_PROPERTIES.getProperties();
+  const startRow = parseInt(props.startRow, 10);
+  const startCol = parseInt(props.startCol, 10);
+  const lastProcessedIndex = parseInt(props.lastProcessedIndex || '-1', 10);
+  const spreadsheetId = props.spreadsheetId;
+  const sheetId = props.sheetId;
 
   if (isNaN(startRow) || isNaN(startCol)) {
     throw new Error('Invalid input: startRow and startCol must be numbers.');
   }
 
   Logger.log('UI Parser Started. Last processed index: ' + lastProcessedIndex);
-  var folderUrl = PropertiesService.getScriptProperties().getProperty('folderUrl');
-  var fileList = JSON.parse(PropertiesService.getScriptProperties().getProperty('fileList'));
+  var folderUrl = props.folderUrl;
+  var fileList = JSON.parse(props.fileList);
   
-  // Open the specific spreadsheet and sheet
   var spreadsheet = SpreadsheetApp.openById(spreadsheetId);
   var sheet = spreadsheet.getSheets().filter(function(s) { return s.getSheetId() == sheetId; })[0];
   
@@ -189,35 +394,78 @@ function insertImagesFromUI() {
   }
 
   var rowIndex = startRow + lastProcessedIndex + 1;
-  var colIndex = startCol;
   var totalFiles = fileList.length;
   var processedInThisExecution = 0;
+  const maxRetries = 3;
 
-  Logger.log('Starting batch processing from index ' + (lastProcessedIndex + 1) + ' at row ' + rowIndex);
-
-  for (var i = lastProcessedIndex + 1; i < totalFiles && processedInThisExecution < batchSize; i++) {
-    if (PropertiesService.getScriptProperties().getProperty('shouldStop') === 'true') {
-      Logger.log('Script stopped by user during image insertion');
+  for (let i = lastProcessedIndex + 1; i < totalFiles && processedInThisExecution < BATCH_SIZE; i++) {
+    // Check stop flag before each image
+    if (SCRIPT_PROPERTIES.getProperty('shouldStop') === 'true') {
+      Logger.log('Stop requested, halting batch immediately');
       return 'stopped';
     }
-    try {
-      var fileObj = fileList[i];
-      var file = DriveApp.getFileById(fileObj.fileId);
-      Logger.log('Processing file ' + (i + 1) + ' of ' + totalFiles + ': ' + file.getName());
-      var resizedImage = resizeImage(fileObj.fileId, 800); // Resize to max width of 800px
-      if (!resizedImage) {
-        throw new Error('Failed to resize image');
-      }
-      var imageData = "data:image/jpeg;base64," + Utilities.base64Encode(resizedImage.getBytes());
-      insertCellImage(sheet.getRange(rowIndex, colIndex), imageData, "Image " + (i + 1), "Image from frame " + fileObj.name);
 
-      Logger.log('Inserted image ' + (i + 1) + ' of ' + totalFiles + ' at row ' + rowIndex);
-      rowIndex++;
-      processedInThisExecution++;
-      PropertiesService.getScriptProperties().setProperty('lastProcessedIndex', i.toString());
-    } catch (e) {
-      Logger.log('Error processing image at index ' + i + ': ' + e.message);
-      // Continue with the next image instead of stopping the entire process
+    if (isTimeUp()) {
+      Logger.log('Approaching time limit, scheduling next batch');
+      SCRIPT_PROPERTIES.setProperty('lastProcessedIndex', i.toString());
+      return false;
+    }
+
+    let retryCount = 0;
+    while (retryCount < maxRetries) {
+      try {
+        // Check stop flag before each attempt
+        if (SCRIPT_PROPERTIES.getProperty('shouldStop') === 'true') {
+          return 'stopped';
+        }
+
+        const fileObj = fileList[i];
+        const file = DriveApp.getFileById(fileObj.fileId);
+        Logger.log('Processing file ' + (i + 1) + ' of ' + totalFiles + ': ' + file.getName());
+        
+        const resizedImage = resizeImage(fileObj.fileId, MAX_IMAGE_WIDTH);
+        if (!resizedImage) {
+          throw new Error('Failed to resize image');
+        }
+
+        const imageBytes = resizedImage.getBytes();
+        if (!imageBytes || imageBytes.length === 0) {
+          throw new Error('Invalid image data');
+        }
+
+        const imageData = "data:image/jpeg;base64," + Utilities.base64Encode(imageBytes);
+        const range = sheet.getRange(rowIndex, startCol);
+        
+        insertCellImage(range, imageData, "Image " + fileObj.name, "Image from frame " + fileObj.name);
+
+        rowIndex++;
+        processedInThisExecution++;
+        SCRIPT_PROPERTIES.setProperty('lastProcessedIndex', i.toString());
+        
+        if (resizedImage.getBytes) {
+          resizedImage.getBytes().length = 0;
+        }
+        
+        if (processedInThisExecution % 5 === 0) {
+          if (isTimeUp()) {
+            SCRIPT_PROPERTIES.setProperty('lastProcessedIndex', i.toString());
+            return false;
+          }
+        }
+        
+        if (processedInThisExecution % 5 === 0) {
+          Utilities.sleep(50);
+        }
+        break;
+      } catch (e) {
+        Logger.log(`Error processing image at index ${i}, attempt ${retryCount + 1}: ${e.message}`);
+        retryCount++;
+        if (retryCount === maxRetries) {
+          Logger.log(`Failed to process image at index ${i} after ${maxRetries} attempts`);
+        } else {
+          Utilities.sleep(1000);
+        }
+      }
     }
   }
 
@@ -225,26 +473,32 @@ function insertImagesFromUI() {
 
   if (lastProcessedIndex + processedInThisExecution >= totalFiles - 1) {
     Logger.log('Image insertion completed');
-    return true; // All images processed
+    SCRIPT_PROPERTIES.setProperty('processingBatch', 'false'); // Ensure batch flag is cleared
+    return true;
   } else {
-    Logger.log('More images to process. Last processed index: ' + PropertiesService.getScriptProperties().getProperty('lastProcessedIndex'));
-    return false; // More images to process
+    Logger.log('More images to process. Last processed index: ' + SCRIPT_PROPERTIES.getProperty('lastProcessedIndex'));
+    return false;
   }
 }
 
 function insertCellImage(range, imageData, altTitle = "", altDescription = "") {
   try {
+    if (!imageData || !imageData.startsWith('data:image')) {
+      throw new Error('Invalid image data format');
+    }
+
     let image = SpreadsheetApp
                     .newCellImage()
                     .setSourceUrl(imageData)
                     .setAltTextTitle(altTitle)
                     .setAltTextDescription(altDescription)
                     .build();
+    
     range.setValue(image);
-    Logger.log('Image inserted successfully');
+    Logger.log('Image inserted successfully at ' + range.getA1Notation());
   } catch (error) {
     Logger.log('Error inserting image: ' + error.message);
-    throw error; // Rethrow the error to be caught in the calling function
+    throw error;
   }
 }
 
@@ -269,7 +523,6 @@ function resizeImage(fileId, maxWidth) {
   var blob = file.getBlob();
   var image = blob.getAs('image/jpeg');
   
-  // Get image dimensions
   var imageData = Utilities.base64Encode(image.getBytes());
   var dimensions = getImageDimensions_(imageData);
   
@@ -282,27 +535,18 @@ function resizeImage(fileId, maxWidth) {
   return image;
 }
 
-function insertCellImage(range, imageData, altTitle = "", altDescription = "") {
-  let image = SpreadsheetApp
-                  .newCellImage()
-                  .setSourceUrl(imageData)
-                  .setAltTextTitle(altTitle)
-                  .setAltTextDescription(altDescription)
-                  .build();
-  range.setValue(image);
-}
-
 function stopImageInsertion() {
-  PropertiesService.getScriptProperties().setProperty('shouldStop', 'true');
-  Logger.log('Stop flag set');
+  SCRIPT_PROPERTIES.setProperty('shouldStop', 'true');
+  SCRIPT_PROPERTIES.setProperty('processingBatch', 'false');
+  Logger.log('Stop flag set and processing batch cleared');
   cleanupAfterStop();
-  return true; // Indicate that stop process is complete
+  return true;
 }
 
 function showUI() {
   var html = HtmlService.createHtmlOutputFromFile('index')
       .setWidth(650)
-      .setHeight(505);
+      .setHeight(540);
   SpreadsheetApp.getUi().showModalDialog(html, 'Insert Thumbnails');
 }
 
@@ -320,29 +564,52 @@ function cleanupAfterStop() {
       ScriptApp.deleteTrigger(triggers[i]);
     }
   }
-  // Get all properties
-  var properties = PropertiesService.getScriptProperties().getProperties();
   
-  // Delete all properties except 'shouldStop'
+  var properties = SCRIPT_PROPERTIES.getProperties();
+  
   for (var key in properties) {
     if (key !== 'shouldStop') {
-      PropertiesService.getScriptProperties().deleteProperty(key);
+      SCRIPT_PROPERTIES.deleteProperty(key);
     }
   }
   
-  // Ensure 'shouldStop' is set to 'true'
-  PropertiesService.getScriptProperties().setProperty('shouldStop', 'true');
-  
+  SCRIPT_PROPERTIES.setProperty('shouldStop', 'true');
+  SCRIPT_PROPERTIES.setProperty('processingBatch', 'false');
   Logger.log('All properties except shouldStop deleted, and shouldStop set to true');
 }
 
 function collectAndSortFiles(folderUrl) {
   try {
-    collectFiles(folderUrl);
-    sortFiles();
-    return previewSortedFiles();
+    Logger.log('Starting collectAndSortFiles');
+    
+    SCRIPT_PROPERTIES.deleteProperty('fileList');
+    
+    const files = collectFiles(folderUrl);
+    Logger.log('collectFiles returned: ' + (files ? files.length + ' files' : 'null'));
+    
+    if (!files || files.length === 0) {
+      return ['No files were found in the specified folder'];
+    }
+    
+    const sortResult = sortFiles();
+    Logger.log('sortFiles returned: ' + sortResult);
+    
+    const preview = previewSortedFiles();
+    Logger.log('Generated preview with ' + preview.length + ' items');
+    
+    return preview;
+    
   } catch (error) {
-    Logger.log('Error in collectAndSortFiles: ' + error.message);
+    Logger.log('Error in collectAndSortFiles: ' + error.toString());
     return ['Error: ' + error.message];
   }
+}
+
+function cleanupExistingTriggers() {
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(trigger => {
+    if (trigger.getHandlerFunction() === 'handleImageInsertion') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
 }

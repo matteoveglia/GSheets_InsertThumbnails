@@ -1,0 +1,22 @@
+# macOS system files
+.DS_Store
+
+# Google Apps Script local development files
+.clasp.json
+.clasprc.json
+
+# Node.js dependencies
+node_modules/
+
+# Environment variables
+.env
+
+# IDE specific files
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp

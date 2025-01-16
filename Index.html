@@ -5,77 +5,119 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      margin: 20px;
-    }
-    h3 {
       color: #333;
     }
-    form {
-      margin-bottom: 20px;
+    .form-group {
+      margin-bottom: 16px;
     }
-    label {
+    .form-group label {
       display: block;
-      margin-top: 10px;
       font-weight: bold;
+      margin-bottom: 8px;
     }
-    input[type="text"], input[type="number"] {
+    .form-group input {
       width: 100%;
       padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
       box-sizing: border-box;
-      margin-top: 5px;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
     }
     .button-container {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      margin-top: 20px;
+      margin-top: 24px;
+      gap: 16px;
     }
-    input[type="button"] {
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 120px;
       padding: 10px 20px;
-      color: #fff;
-      background-color: #007bff;
+      background-color: #4285f4;
+      color: white;
       border: none;
-      border-radius: 5px;
+      border-radius: 4px;
       cursor: pointer;
+      font-weight: 500;
+      transition: background-color 0.2s;
     }
-    input[type="button"]:hover {
-      background-color: #0056b3;
+    .button:hover:not(:disabled) {
+      background-color: #3367d6;
+    }
+    .button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
     }
     .spinner {
       display: none;
-      width: 24px;
-      height: 24px;
-      border: 4px solid lightgray;
-      border-top-color: blue;
+      width: 13px;
+      height: 13px;
+      margin-right: 8px;
+      border: 3px solid #ffffff;
+      border-top-color: transparent;
       border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-left: 10px;
+      animation: spin 0.8s linear infinite;
     }
     @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
+      to { transform: rotate(360deg); }
     }
-    .checklist {
-      list-style-type: none;
-      padding: 0;
-      margin-top: 20px;
+    .progress-steps {
+      margin-top: 32px;
     }
-    .checklist li {
+    .step {
       display: flex;
       align-items: center;
-      padding: 10px 0;
-      font-weight: bold;
-      color: #555;
+      margin-bottom: 12px;
+      color: #666;
     }
-    .checklist li.in-progress {
-      color: orange;
+    .step-icon {
+      width: 20px;
+      height: 20px;
+      margin-right: 12px;
+      border-radius: 50%;
+      border: 2px solid #ddd;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
     }
-    .checklist li.completed {
-      color: green;
+    .step.active {
+      color: #4285f4;
     }
-    .disabled {
-      pointer-events: none;
-      opacity: 0.6;
+    .step.active .step-icon {
+      border-color: #4285f4;
+    }
+    .step.completed {
+      color: #34a853;
+    }
+    .step.completed .step-icon {
+      background-color: #34a853;
+      border-color: #34a853;
+    }
+    .step.completed .step-icon:after {
+      content: '✓';
+      color: white;
+      font-size: 12px;
+    }
+    .step.in-progress .step-icon {
+      position: relative;
+      border-color: #4285f4;
+    }
+    .step.in-progress .step-icon:after {
+      content: '';
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border: 2px solid #4285f4;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
     }
     .modal {
       display: none;
@@ -86,72 +128,121 @@
       width: 100%;
       height: 100%;
       overflow: auto;
-      background-color: rgb(0,0,0);
       background-color: rgba(0,0,0,0.4);
-      padding-top: 60px;
+      padding-top: 20px;
     }
     .modal-content {
       background-color: #fefefe;
       margin: auto;
-      padding: 20px;
+      padding: 24px;
       border: 1px solid #888;
       width: 80%;
-      max-height: 80vh;
+      max-height: 90vh;
       overflow-y: auto;
       position: absolute;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
+      border-radius: 8px;
     }
     #modalMessage ol {
-    max-height: 60vh;
-    overflow-y: auto;
-    padding-left: 40px; /* Increased padding */
-    }
-    #modalMessage li {
-      margin-bottom: 5px;
-      padding-left: 10px; /* Added padding */
+      max-height: 70vh;
+      overflow-y: auto;
+      padding-left: 40px;
     }
     .close {
       color: #aaa;
       float: right;
       font-size: 28px;
       font-weight: bold;
+      cursor: pointer;
     }
     .close:hover,
     .close:focus {
       color: black;
       text-decoration: none;
-      cursor: pointer;
+    }
+    .step.stopped {
+      color: #dc3545;
+    }
+    .step.stopped .step-icon {
+      background-color: #dc3545;
+      border-color: #dc3545;
+    }
+    .step.stopped .step-icon:after {
+      content: '⨯';
+      color: white;
+      font-size: 18px;
+      font-weight: bold;
+    }
+    .info-box {
+      margin-top: 24px;
+      padding: 12px 16px;
+      background-color: #e8f0fe;
+      border-left: 4px solid #4285f4;
+      border-radius: 4px;
+      color: #333;
+      font-size: 14px;
+      line-height: 1.4;
     }
   </style>
 </head>
 <body>
   <form id="imageForm">
-    <label for="folderUrl">Folder URL:</label>
-    <input type="text" id="folderUrl" name="folderUrl" placeholder="Enter Google Drive folder URL" required>
-    
-    <label for="startRow">Start Row:</label>
-    <input type="number" id="startRow" name="startRow" placeholder="Enter start row number" required>
-    
-    <label for="startCol">Start Column:</label>
-    <input type="number" id="startCol" name="startCol" placeholder="Enter start column number" required>
-    
+    <div class="form-group">
+      <label for="folderUrl">Folder URL:</label>
+      <input type="text" id="folderUrl" name="folderUrl" placeholder="Enter Google Drive folder URL" required>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="startRow">Start Row:</label>
+        <input type="number" id="startRow" name="startRow" value="1" required>
+      </div>
+      <div class="form-group">
+        <label for="startCol">Start Column:</label>
+        <input type="number" id="startCol" name="startCol" value="1" required>
+      </div>
+    </div>
     <div class="button-container">
-      <input type="button" id="submitButton" value="Insert Images" onclick="submitForm()">
-      <div id="mainSpinner" class="spinner"></div>
-      <input type="button" id="previewButton" value="Preview Sort Order" onclick="previewSortOrder()">
-      <div id="previewSpinner" class="spinner"></div>
+      <button type="submit" id="submitButton" class="button">
+        <span class="spinner" id="submitSpinner"></span>
+        <span id="submitText">Insert Images</span>
+      </button>
+      <button type="button" id="previewButton" class="button">
+        <span class="spinner" id="previewSpinner"></span>
+        <span id="previewText">Preview Sort Order</span>
+      </button>
     </div>
   </form>
-  <ul class="checklist">
-    <li id="step1">Initializing process</li>
-    <li id="step2">Collecting files from folder</li>
-    <li id="step3">Sorting files</li>
-    <li id="step4">Inserting images into sheet</li>
-    <li id="step5">Process completed</li>
-  </ul>
+
+  <div class="progress-steps">
+    <div class="step" id="step1">
+      <div class="step-icon"></div>
+      <span>Initialising process</span>
+    </div>
+    <div class="step" id="step2">
+      <div class="step-icon"></div>
+      <span>Collecting files from folder</span>
+    </div>
+    <div class="step" id="step3">
+      <div class="step-icon"></div>
+      <span>Sorting files</span>
+    </div>
+    <div class="step" id="step4">
+      <div class="step-icon"></div>
+      <span>Inserting images into sheet</span>
+    </div>
+    <div class="step" id="step5">
+      <div class="step-icon"></div>
+      <span>Process completed</span>
+    </div>
+  </div>
   
+  <div class="info-box">
+    <p style="margin: 0"> This process may take some time depending on the number of images.</p>
+    <p style="margin: 0"> Due to Google's limitations, the script will automatically stop after 90 minutes. For large folders, you may need to run it multiple times.</p>
+  </div>
+
   <div id="myModal" class="modal">
     <div class="modal-content">
       <span class="close" onclick="closeModal()">&times;</span>
@@ -160,7 +251,41 @@
   </div>
   
   <script>
-    function submitForm() {
+    let isProcessing = false;
+    let isPreviewing = false;
+
+    function updateStepStatus(stepNumber, status) {
+      const step = document.getElementById(`step${stepNumber}`);
+      step.className = 'step ' + status;
+    }
+
+    function toggleLoadingState(isLoading, buttonId, spinnerId, textId, loadingText) {
+      const button = document.getElementById(buttonId);
+      const spinner = document.getElementById(spinnerId);
+      const text = document.getElementById(textId);
+      
+      if (isLoading) {
+        spinner.style.display = 'inline-block';
+        text.textContent = loadingText;
+        // Only disable the button if it's not being set to "Stop" state
+        button.disabled = loadingText !== 'Stop';
+      } else {
+        spinner.style.display = 'none';
+        text.textContent = (buttonId === 'submitButton') ? 'Insert Images' : 'Preview Sort Order';
+        button.disabled = false;
+      }
+    }
+
+    // Update the submit button handler to allow stopping
+    document.getElementById('imageForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      
+      // If already processing, handle stop action
+      if (isProcessing) {
+        stopScript();
+        return;
+      }
+
       const folderUrl = document.getElementById('folderUrl').value;
       const startRow = document.getElementById('startRow').value;
       const startCol = document.getElementById('startCol').value;
@@ -170,24 +295,25 @@
         return;
       }
 
-      disableForm(true);
-      showSpinner('mainSpinner');
-      document.getElementById('submitButton').value = 'Stop';
-      document.getElementById('submitButton').onclick = stopScript;
-      updateChecklist('step1', 'in-progress');
+      // Reset steps before starting new process
+      resetChecklist();
+      
+      isProcessing = true;
+      toggleLoadingState(true, 'submitButton', 'submitSpinner', 'submitText', 'Stop');
+      updateStepStatus(1, 'in-progress');
 
       google.script.run
         .withSuccessHandler(function() {
-          updateChecklist('step1', 'completed');
-          updateChecklist('step2', 'in-progress');
+          updateStepStatus(1, 'completed');
+          updateStepStatus(2, 'in-progress');
           google.script.run
             .withSuccessHandler(function() {
-              updateChecklist('step2', 'completed');
-              updateChecklist('step3', 'in-progress');
+              updateStepStatus(2, 'completed');
+              updateStepStatus(3, 'in-progress');
               google.script.run
                 .withSuccessHandler(function() {
-                  updateChecklist('step3', 'completed');
-                  updateChecklist('step4', 'in-progress');
+                  updateStepStatus(3, 'completed');
+                  updateStepStatus(4, 'in-progress');
                   google.script.run
                     .withSuccessHandler(handleImageInsertionResult)
                     .withFailureHandler(handleImageInsertionError)
@@ -210,23 +336,62 @@
           showModal('Failed to initialize process: ' + error);
         })
         .initializeProcess(folderUrl, startRow, startCol);
-    }
+    });
+
+    document.getElementById('previewButton').addEventListener('click', function() {
+      const folderUrl = document.getElementById('folderUrl').value;
+
+      if (!folderUrl) {
+        alert('Please enter the folder URL.');
+        return;
+      }
+      
+      isPreviewing = true;
+      toggleLoadingState(true, 'previewButton', 'previewSpinner', 'previewText', 'Previewing...');
+      google.script.run
+        .withSuccessHandler(function(sortedFiles) {
+          isPreviewing = false;
+          toggleLoadingState(false, 'previewButton', 'previewSpinner', 'previewText');
+          displaySortedFiles(sortedFiles);
+        })
+        .withFailureHandler(function(error) {
+          isPreviewing = false;
+          toggleLoadingState(false, 'previewButton', 'previewSpinner', 'previewText');
+          alert('Failed to preview sorted files: ' + error);
+        })
+        .previewSortOrder(folderUrl);
+    });
 
     function handleImageInsertionResult(result) {
       console.log("Image insertion result:", result);
       if (result === 'completed') {
-        updateChecklist('step4', 'completed');
-        updateChecklist('step5', 'completed');
-        resetForm();
+        updateStepStatus(4, 'completed');
+        updateStepStatus(5, 'completed');
+        isProcessing = false; // Ensure processing flag is reset
+        toggleLoadingState(false, 'submitButton', 'submitSpinner', 'submitText');
+        document.getElementById('submitButton').value = 'Insert Images';
+        document.getElementById('submitText').textContent = 'Insert Images';
+        disableForm(false); // Re-enable form inputs
         showModal('Process completed. All images inserted.');
       } else if (result === 'continuing') {
-        updateChecklist('step4', 'in-progress');
-        showModal('Batch completed. Processing will continue automatically.');
+        updateStepStatus(4, 'in-progress');
       } else if (result === 'stopped') {
-        resetForm();
+        const currentStep = document.querySelector('.step.in-progress');
+        if (currentStep) {
+          currentStep.className = 'step stopped';
+        }
+        isProcessing = false;
+        toggleLoadingState(false, 'submitButton', 'submitSpinner', 'submitText');
+        document.getElementById('submitButton').value = 'Insert Images';
+        document.getElementById('submitText').textContent = 'Insert Images';
+        disableForm(false);
         showModal('Process stopped by user.');
       } else {
-        resetForm();
+        isProcessing = false;
+        toggleLoadingState(false, 'submitButton', 'submitSpinner', 'submitText');
+        document.getElementById('submitButton').value = 'Insert Images';
+        document.getElementById('submitText').textContent = 'Insert Images';
+        disableForm(false);
         showModal('An error occurred during image insertion: ' + result);
       }
     }
@@ -237,59 +402,70 @@
       showModal('Failed to insert images: ' + error);
     }
 
-    function previewSortOrder() {
-      const folderUrl = document.getElementById('folderUrl').value;
-
-      if (!folderUrl) {
-        alert('Please enter the folder URL.');
-        return;
-      }
-      showSpinner('previewSpinner');
-      google.script.run
-        .withSuccessHandler(function(sortedFiles) {
-          resetForm();
-          hideSpinner('previewSpinner');
-          displaySortedFiles(sortedFiles);
-        })
-        .withFailureHandler(function(error) {
-          resetForm();
-          hideSpinner('previewSpinner');
-          alert('Failed to preview sorted files: ' + error);
-        })
-        .collectAndSortFiles(folderUrl);
-    }
-
     function displaySortedFiles(sortedFiles) {
+      // Ensure sortedFiles is an array
+      if (!Array.isArray(sortedFiles)) {
+        console.error('Invalid sortedFiles format:', sortedFiles);
+        sortedFiles = [];
+      }
+
       const modal = document.getElementById('myModal');
-      const modalContent = document.querySelector('.modal-content');
       const message = document.getElementById('modalMessage');
       
-      // Clear previous content
-      message.innerHTML = '';
+      if (!modal || !message) {
+        console.error('Required modal elements not found');
+        return;
+      }
       
-      // Add title
-      const title = document.createElement('h3');
-      title.textContent = 'Sorted Files';
-      message.appendChild(title);
+      // Clear previous content safely
+      while (message.firstChild) {
+        message.removeChild(message.firstChild);
+      }
       
-      // Add file list
-      const fileList = document.createElement('ol');
-      sortedFiles.forEach(file => {
-        const li = document.createElement('li');
-        li.textContent = file;
-        fileList.appendChild(li);
-      });
-      message.appendChild(fileList);
-      
-      // Add file count
-      const count = document.createElement('p');
-      count.textContent = `Total files: ${sortedFiles.length}`;
-      message.appendChild(count);
-      
-      modal.style.display = 'block';
+      try {
+        // Add title
+        const title = document.createElement('h3');
+        title.textContent = 'Sorted Files Preview';
+        message.appendChild(title);
+        
+        if (sortedFiles.length === 0) {
+          const noFiles = document.createElement('p');
+          noFiles.textContent = 'No files found in the specified folder.';
+          message.appendChild(noFiles);
+        } else {
+          // Add file list
+          const fileList = document.createElement('ol');
+          sortedFiles.forEach((file, index) => {
+            if (file && typeof file === 'string') {
+              const li = document.createElement('li');
+              li.textContent = `${file}`;
+              fileList.appendChild(li);
+            }
+          });
+          message.appendChild(fileList);
+          
+          // Add file count
+          const count = document.createElement('p');
+          count.textContent = `Total files: ${sortedFiles.length}`;
+          message.appendChild(count);
+        }
+        
+        // Show the modal
+        modal.style.display = 'block';
+        
+      } catch (error) {
+        console.error('Error displaying sorted files:', error);
+        showModal('Error displaying file list. Please try again.');
+      }
     }
 
     function stopScript() {
+      // Mark current in-progress step as stopped
+      const currentStep = document.querySelector('.step.in-progress');
+      if (currentStep) {
+        currentStep.className = 'step stopped';
+      }
+      
       google.script.run
         .withSuccessHandler(function(result) {
           if (result) {
@@ -301,11 +477,12 @@
     }
 
     function resetForm() {
-      disableForm(false);
-      hideSpinner('mainSpinner');
-      resetChecklist();
+      isProcessing = false;
+      toggleLoadingState(false, 'submitButton', 'submitSpinner', 'submitText');
       document.getElementById('submitButton').value = 'Insert Images';
-      document.getElementById('submitButton').onclick = submitForm;
+      document.getElementById('submitText').textContent = 'Insert Images';
+      disableForm(false);
+      resetChecklist();
     }
 
     function updateChecklist(stepId, status) {
@@ -315,9 +492,9 @@
     }
 
     function resetChecklist() {
-      const checklistItems = document.querySelectorAll('.checklist li');
-      checklistItems.forEach(item => {
-        item.classList.remove('in-progress', 'completed');
+      const steps = document.querySelectorAll('.step');
+      steps.forEach(step => {
+        step.className = 'step';
       });
     }
 
@@ -344,7 +521,29 @@
     function showModal(message) {
       const modal = document.getElementById('myModal');
       const modalMessage = document.getElementById('modalMessage');
-      modalMessage.innerText = message;
+      
+      if (!modal || !modalMessage) {
+        console.error('Modal elements not found');
+        alert(message); // Fallback to alert if modal isn't available
+        return;
+      }
+      
+      // Clear existing content
+      while (modalMessage.firstChild) {
+        modalMessage.removeChild(modalMessage.firstChild);
+      }
+      
+      if (typeof message === 'string') {
+        const p = document.createElement('p');
+        p.textContent = message;
+        modalMessage.appendChild(p);
+      } else {
+        console.error('Invalid message format:', message);
+        const p = document.createElement('p');
+        p.textContent = 'An error occurred. Please try again.';
+        modalMessage.appendChild(p);
+      }
+      
       modal.style.display = 'block';
     }
 
