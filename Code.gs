@@ -480,6 +480,18 @@ class EnhancedCache {
   put(fileId, width, imageData, fileSize = 0) {
     try {
       const key = this.generateCacheKey(fileId, width);
+      
+      // Check if image data is too large for cache (Google Apps Script limit is ~100KB per cache entry)
+      const maxCacheSize = 90 * 1024; // 90KB to be safe
+      if (imageData.length > maxCacheSize) {
+        logWithContext('DEBUG', 'Image too large for cache, skipping', {
+          fileId: fileId,
+          dataSize: imageData.length,
+          maxSize: maxCacheSize
+        });
+        return false;
+      }
+      
       const metadata = {
         data: imageData,
         timestamp: Date.now(),
@@ -565,6 +577,15 @@ class EnhancedCache {
         error: error.message
       });
     }
+  }
+  
+  /**
+   * Get cache hit rate (placeholder implementation)
+   * Note: Google Apps Script cache doesn't provide hit rate metrics
+   */
+  getHitRate() {
+    // Return a default value since GAS cache doesn't provide hit rate metrics
+    return 0.0;
   }
 }
 
@@ -672,16 +693,17 @@ class AdaptiveBatchProcessor {
   processSingleImageWithCache(fileObj, spreadsheetId, sheetId, startRow, startCol, index) {
     try {
       // Check cache first
-      const cachedImage = this.enhancedCache.get(fileObj.fileId, MAX_WIDTH);
+      const cachedImage = this.enhancedCache.get(fileObj.fileId, MAX_IMAGE_WIDTH);
       
       if (cachedImage) {
-        // Use cached image
+        // Use cached image with proper data URI format
+        const imageData = `data:image/jpeg;base64,${cachedImage}`;
         const rowIndex = startRow + index;
         const range = SpreadsheetApp.openById(spreadsheetId)
           .getSheets().filter(s => s.getSheetId() == sheetId)[0]
           .getRange(rowIndex, startCol);
         
-        insertCellImage(range, cachedImage, fileObj.fileName, '');
+        insertCellImage(range, imageData, fileObj.fileName, '');
         
         logWithContext('DEBUG', 'Used cached image', {
           fileId: fileObj.fileId,
@@ -692,12 +714,12 @@ class AdaptiveBatchProcessor {
       }
       
       // Process image normally
-      const file = safeFileAccess(fileObj.fileId, 'adaptive batch file access');
-      const resizedImage = resizeImage(file);
-      const imageData = Utilities.base64Encode(resizedImage.getBytes());
+      const resizedImage = resizeImage(fileObj.fileId, MAX_IMAGE_WIDTH);
+      const base64Data = Utilities.base64Encode(resizedImage.getBytes());
+      const imageData = `data:image/jpeg;base64,${base64Data}`;
       
-      // Cache the processed image
-      this.enhancedCache.put(fileObj.fileId, MAX_WIDTH, imageData, resizedImage.getBytes().length);
+      // Cache the processed image (cache base64 only to save space)
+      this.enhancedCache.put(fileObj.fileId, MAX_IMAGE_WIDTH, base64Data, resizedImage.getBytes().length);
       
       // Insert into sheet
       const rowIndex = startRow + index;
@@ -1349,7 +1371,8 @@ function handleImageInsertion() {
     const startCol = parseInt(props.startCol);
     const lastProcessedIndex = parseInt(props.lastProcessedIndex || '-1');
     
-    if (!spreadsheetId || !sheetId || !startRow || !startCol) {
+    // Validate parameters (note: sheetId can be 0, which is valid)
+    if (!spreadsheetId || isNaN(sheetId) || isNaN(startRow) || isNaN(startCol) || startRow < 1 || startCol < 1) {
       throw new ScriptError(ERROR_CODES.VALIDATION, 'Missing required processing parameters');
     }
     
@@ -1457,7 +1480,7 @@ function handleImageInsertion() {
     // Continue processing in same execution if time allows
      logWithContext('DEBUG', 'Continuing processing in same execution', {
        nextIndex: batchResult.nextIndex,
-       remainingTime: MAX_EXECUTION_TIME - (Date.now() - SCRIPT_START_TIME)
+       remainingTime: MAX_EXECUTION_TIME - (Date.now() - START_TIME)
      });
     
     // Small delay to prevent overwhelming the system
@@ -1528,11 +1551,22 @@ function getImageDimensions_(base64Image) {
   var width = -1;
   var height = -1;
 
-  for (var i = 0; i < decodedImage.length; i++) {
-    if (decodedImage[i] == 0xFF && decodedImage[i+1] == 0xC0) {
-      height = decodedImage[i+5] * 256 + decodedImage[i+6];
-      width = decodedImage[i+7] * 256 + decodedImage[i+8];
-      break;
+  // Look for JPEG SOF (Start of Frame) markers
+  // SOF0 (0xC0), SOF1 (0xC1), SOF2 (0xC2), SOF3 (0xC3), etc.
+  for (var i = 0; i < decodedImage.length - 8; i++) {
+    if (decodedImage[i] == 0xFF) {
+      var marker = decodedImage[i+1];
+      // Check for SOF markers (0xC0 to 0xCF, excluding 0xC4, 0xC8, 0xCC which are not SOF)
+      if ((marker >= 0xC0 && marker <= 0xC3) || 
+          (marker >= 0xC5 && marker <= 0xC7) || 
+          (marker >= 0xC9 && marker <= 0xCB) || 
+          (marker >= 0xCD && marker <= 0xCF)) {
+        // SOF structure: FF Cn LL LL P YY YY XX XX
+        // Where YY YY is height and XX XX is width
+        height = (decodedImage[i+5] << 8) | decodedImage[i+6];
+        width = (decodedImage[i+7] << 8) | decodedImage[i+8];
+        break;
+      }
     }
   }
 
