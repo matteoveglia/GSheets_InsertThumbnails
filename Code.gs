@@ -1212,7 +1212,7 @@ function getPerformanceMetrics() {
     const processedCount = lastProcessedIndex + 1;
     
     // Get cached performance data if available
-    const performanceData = CACHE_SERVICE.get('performance_metrics');
+    const performanceData = CacheService.getScriptCache().get('performance_metrics');
     let metrics = {
       imagesProcessed: processedCount,
       totalImages: totalFiles
@@ -1282,7 +1282,7 @@ function updatePerformanceMetricsCache(metrics) {
       lastUpdated: Date.now()
     };
     
-    CACHE_SERVICE.put('performance_metrics', JSON.stringify(cacheData), 300); // 5 minutes
+    CacheService.getScriptCache().put('performance_metrics', JSON.stringify(cacheData), 300); // 5 minutes
     
   } catch (error) {
     logWithContext('WARN', 'Failed to update performance metrics cache', { error: error.message });
@@ -1685,6 +1685,44 @@ function stopImageInsertion() {
   Logger.log('Stop flag set and processing batch cleared');
   cleanupAfterStop();
   return true;
+}
+
+/**
+ * Force reset the entire system - stops all processes and clears all state
+ * This is used when the system gets stuck or needs a complete reset
+ */
+function forceResetSystem() {
+  try {
+    logWithContext('INFO', 'Starting force reset of system', {});
+    
+    // 1. Stop any running processes
+    SCRIPT_PROPERTIES.setProperty('shouldStop', 'true');
+    SCRIPT_PROPERTIES.setProperty('processingBatch', 'false');
+    
+    // 2. Clean up all triggers
+    cleanupExistingTriggers();
+    
+    // 3. Clear all script properties
+    SCRIPT_PROPERTIES.deleteAllProperties();
+    
+    // 4. Clear all cache
+    try {
+      CacheService.getScriptCache().removeAll(['img_*', 'performance_metrics']);
+      logWithContext('DEBUG', 'Cache cleared during reset', {});
+    } catch (cacheError) {
+      logWithContext('WARN', 'Cache cleanup failed during reset', { error: cacheError.message });
+    }
+    
+    // 5. Force garbage collection hint
+    Utilities.sleep(GARBAGE_COLLECTION_HINT_DELAY * 3);
+    
+    logWithContext('INFO', 'Force reset completed successfully', {});
+    return { success: true, message: 'System reset successfully. You can now start a new process.' };
+    
+  } catch (error) {
+    logWithContext('ERROR', 'Force reset failed', { error: error.message });
+    return { success: false, message: `Reset failed: ${error.message}` };
+  }
 }
 
 function showUI() {

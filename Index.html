@@ -185,43 +185,63 @@
       font-size: 14px;
       line-height: 1.4;
     }
-    .performance-metrics {
-      margin-top: 24px;
-      padding: 16px;
-      background-color: #f8f9fa;
-      border: 1px solid #e9ecef;
-      border-radius: 8px;
-    }
-    .performance-metrics h3 {
-      margin: 0 0 16px 0;
-      color: #333;
-      font-size: 18px;
-      font-weight: 600;
-    }
-    .metrics-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 12px;
-    }
-    .metric-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 8px 12px;
-      background-color: white;
-      border: 1px solid #dee2e6;
+    .reset-button {
+      background-color: #dc3545;
+      color: white;
+      border: none;
+      padding: 10px 20px;
       border-radius: 4px;
-    }
-    .metric-label {
-      font-weight: 500;
-      color: #495057;
+      cursor: pointer;
       font-size: 14px;
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 120px;
+      justify-content: center;
     }
-    .metric-value {
-      font-weight: 600;
-      color: #28a745;
-      font-size: 14px;
-      font-family: 'Courier New', monospace;
+    .reset-button:hover {
+      background-color: #c82333;
+    }
+    .reset-button:disabled {
+      background-color: #6c757d;
+      cursor: not-allowed;
+    }
+    .tooltip {
+      position: relative;
+      display: inline-block;
+    }
+    .tooltip .tooltiptext {
+      visibility: hidden;
+      width: 280px;
+      background-color: #333;
+      color: #fff;
+      text-align: center;
+      border-radius: 6px;
+      padding: 8px;
+      position: absolute;
+      z-index: 1;
+      bottom: 125%;
+      left: 50%;
+      margin-left: -140px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .tooltip .tooltiptext::after {
+      content: "";
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      margin-left: -5px;
+      border-width: 5px;
+      border-style: solid;
+      border-color: #333 transparent transparent transparent;
+    }
+    .tooltip:hover .tooltiptext {
+      visibility: visible;
+      opacity: 1;
     }
   </style>
 </head>
@@ -250,6 +270,13 @@
         <span class="spinner" id="previewSpinner"></span>
         <span id="previewText">Preview Sort Order</span>
       </button>
+      <div class="tooltip">
+        <button type="button" id="resetButton" class="button reset-button">
+          <span class="spinner" id="resetSpinner"></span>
+          <span id="resetText">Reset/Stop</span>
+        </button>
+        <span class="tooltiptext">Click this to force stop any active/rogue processes and reset the UI</span>
+      </div>
     </div>
   </form>
 
@@ -275,44 +302,6 @@
       <span>Process completed</span>
     </div>
   </div>
-
-  <div class="performance-metrics" id="performanceMetrics" style="display: none;">
-    <h3>Performance Metrics</h3>
-    <div class="metrics-grid">
-      <div class="metric-item">
-        <span class="metric-label">Current Batch Size:</span>
-        <span class="metric-value" id="currentBatchSize">-</span>
-      </div>
-      <div class="metric-item">
-        <span class="metric-label">Images Processed:</span>
-        <span class="metric-value" id="imagesProcessed">0</span>
-      </div>
-      <div class="metric-item">
-        <span class="metric-label">Total Images:</span>
-        <span class="metric-value" id="totalImages">-</span>
-      </div>
-      <div class="metric-item">
-        <span class="metric-label">Progress:</span>
-        <span class="metric-value" id="progressPercentage">0%</span>
-      </div>
-      <div class="metric-item">
-        <span class="metric-label">Average Processing Time:</span>
-        <span class="metric-value" id="avgProcessingTime">-</span>
-      </div>
-      <div class="metric-item">
-        <span class="metric-label">Memory Usage:</span>
-        <span class="metric-value" id="memoryUsage">-</span>
-      </div>
-      <div class="metric-item">
-        <span class="metric-label">Cache Hit Rate:</span>
-        <span class="metric-value" id="cacheHitRate">-</span>
-      </div>
-      <div class="metric-item">
-        <span class="metric-label">Estimated Time Remaining:</span>
-        <span class="metric-value" id="estimatedTimeRemaining">-</span>
-      </div>
-    </div>
-  </div>
   
   <div class="info-box">
     <p style="margin: 0"> This process may take some time depending on the number of images.</p>
@@ -329,147 +318,10 @@
   <script>
     let isProcessing = false;
     let isPreviewing = false;
-    let performancePollingInterval = null;
 
     function updateStepStatus(stepNumber, status) {
       const step = document.getElementById(`step${stepNumber}`);
       step.className = 'step ' + status;
-      
-      // Show performance metrics when image insertion starts
-      if (stepNumber === 4 && status === 'in-progress') {
-        document.getElementById('performanceMetrics').style.display = 'block';
-        startPerformancePolling();
-      }
-      
-      // Hide performance metrics when process completes or stops
-      if (stepNumber === 5 && (status === 'completed' || status === 'stopped')) {
-        document.getElementById('performanceMetrics').style.display = 'none';
-        stopPerformancePolling();
-      }
-    }
-
-    function updatePerformanceMetrics(metrics) {
-      if (!metrics) return;
-      
-      const elements = {
-        currentBatchSize: document.getElementById('currentBatchSize'),
-        imagesProcessed: document.getElementById('imagesProcessed'),
-        totalImages: document.getElementById('totalImages'),
-        progressPercentage: document.getElementById('progressPercentage'),
-        avgProcessingTime: document.getElementById('avgProcessingTime'),
-        memoryUsage: document.getElementById('memoryUsage'),
-        cacheHitRate: document.getElementById('cacheHitRate'),
-        estimatedTimeRemaining: document.getElementById('estimatedTimeRemaining')
-      };
-      
-      if (metrics.currentBatchSize !== undefined) {
-        elements.currentBatchSize.textContent = metrics.currentBatchSize;
-      }
-      
-      if (metrics.imagesProcessed !== undefined) {
-        elements.imagesProcessed.textContent = metrics.imagesProcessed;
-      }
-      
-      if (metrics.totalImages !== undefined) {
-        elements.totalImages.textContent = metrics.totalImages;
-      }
-      
-      if (metrics.progressPercentage !== undefined) {
-        elements.progressPercentage.textContent = `${metrics.progressPercentage}%`;
-      }
-      
-      if (metrics.avgProcessingTime !== undefined) {
-        elements.avgProcessingTime.textContent = `${metrics.avgProcessingTime}ms`;
-      }
-      
-      if (metrics.memoryUsage !== undefined) {
-        elements.memoryUsage.textContent = `${metrics.memoryUsage}%`;
-      }
-      
-      if (metrics.cacheHitRate !== undefined) {
-        elements.cacheHitRate.textContent = `${metrics.cacheHitRate}%`;
-      }
-      
-      if (metrics.estimatedTimeRemaining !== undefined) {
-        const minutes = Math.floor(metrics.estimatedTimeRemaining / 60000);
-        const seconds = Math.floor((metrics.estimatedTimeRemaining % 60000) / 1000);
-        elements.estimatedTimeRemaining.textContent = `${minutes}m ${seconds}s`;
-      }
-    }
-
-    function resetPerformanceMetrics() {
-      const elements = ['currentBatchSize', 'avgProcessingTime', 'memoryUsage', 'cacheHitRate', 'estimatedTimeRemaining', 'totalImages'];
-      elements.forEach(id => {
-        document.getElementById(id).textContent = '-';
-      });
-      document.getElementById('imagesProcessed').textContent = '0';
-      document.getElementById('progressPercentage').textContent = '0%';
-    }
-
-    function startPerformancePolling() {
-      if (performancePollingInterval) {
-        clearInterval(performancePollingInterval);
-      }
-      
-      performancePollingInterval = setInterval(function() {
-        // Check processing status first
-        google.script.run
-          .withSuccessHandler(function(status) {
-            if (status) {
-              if (status.isComplete && isProcessing) {
-                // Processing is complete
-                console.log('Processing completed!');
-                isProcessing = false;
-                updateStepStatus('Process completed', 'completed');
-                stopPerformancePolling();
-                toggleLoadingState(false);
-                
-                // Final metrics update
-                updatePerformanceMetrics({
-                  imagesProcessed: status.processedCount,
-                  totalImages: status.totalFiles,
-                  progressPercentage: 100
-                });
-                
-                return;
-              }
-              
-              if (!status.isProcessing && isProcessing) {
-                // Processing stopped unexpectedly
-                console.log('Processing stopped');
-                isProcessing = false;
-                stopPerformancePolling();
-                toggleLoadingState(false);
-                return;
-              }
-            }
-            
-            // Get performance metrics if still processing
-            if (isProcessing) {
-              google.script.run
-                .withSuccessHandler(function(metrics) {
-                  if (metrics && isProcessing) {
-                    updatePerformanceMetrics(metrics);
-                  }
-                })
-                .withFailureHandler(function(error) {
-                  console.log('Performance metrics polling error:', error);
-                })
-                .getPerformanceMetrics();
-            }
-          })
-          .withFailureHandler(function(error) {
-            console.log('Status check error:', error);
-          })
-          .getProcessingStatus();
-      }, 3000); // Poll every 3 seconds
-    }
-
-    function stopPerformancePolling() {
-      if (performancePollingInterval) {
-        clearInterval(performancePollingInterval);
-        performancePollingInterval = null;
-      }
     }
 
     function toggleLoadingState(isLoading, buttonId, spinnerId, textId, loadingText) {
@@ -484,7 +336,13 @@
         button.disabled = loadingText !== 'Stop';
       } else {
         spinner.style.display = 'none';
-        text.textContent = (buttonId === 'submitButton') ? 'Insert Images' : 'Preview Sort Order';
+        if (buttonId === 'submitButton') {
+          text.textContent = 'Insert Images';
+        } else if (buttonId === 'previewButton') {
+          text.textContent = 'Preview Sort Order';
+        } else if (buttonId === 'resetButton') {
+          text.textContent = 'Reset/Stop';
+        }
         button.disabled = false;
       }
     }
@@ -570,6 +428,28 @@
           alert('Failed to preview sorted files: ' + error);
         })
         .previewSortOrder(folderUrl);
+    });
+
+    // Reset button functionality
+    document.getElementById('resetButton').addEventListener('click', function() {
+      if (confirm('Are you sure you want to force reset the system? This will stop all active processes and clear all data.')) {
+        toggleLoadingState(true, 'resetButton', 'resetSpinner', 'resetText', 'Resetting...');
+        
+        google.script.run
+          .withSuccessHandler(function(result) {
+            toggleLoadingState(false, 'resetButton', 'resetSpinner', 'resetText');
+            resetForm();
+            showModal('System has been reset successfully. All processes stopped and data cleared.');
+          })
+          .withFailureHandler(function(error) {
+            toggleLoadingState(false, 'resetButton', 'resetSpinner', 'resetText');
+            console.error('Reset failed:', error);
+            // Still try to reset the UI even if backend reset failed
+            resetForm();
+            showModal('Reset completed with some errors: ' + error + '. UI has been reset.');
+          })
+          .forceResetSystem();
+      }
     });
 
     function handleImageInsertionResult(result) {
