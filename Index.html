@@ -185,6 +185,64 @@
       font-size: 14px;
       line-height: 1.4;
     }
+    .reset-button {
+      background-color: #dc3545;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-width: 120px;
+      transition: background-color 0.2s;
+    }
+    .reset-button:hover {
+      background-color: #c82333;
+    }
+    .reset-button:disabled {
+      background-color: #6c757d;
+      cursor: not-allowed;
+    }
+    .tooltip {
+      position: relative;
+      display: inline-block;
+    }
+    .tooltip .tooltiptext {
+      visibility: hidden;
+      width: 280px;
+      background-color: #333;
+      color: #fff;
+      text-align: center;
+      border-radius: 6px;
+      padding: 8px;
+      position: absolute;
+      z-index: 1;
+      bottom: 125%;
+      left: 50%;
+      margin-left: -140px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      font-size: 12px;
+      line-height: 1.3;
+    }
+    .tooltip .tooltiptext::after {
+      content: "";
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      margin-left: -5px;
+      border-width: 5px;
+      border-style: solid;
+      border-color: #333 transparent transparent transparent;
+    }
+    .tooltip:hover .tooltiptext {
+      visibility: visible;
+      opacity: 1;
+    }
   </style>
 </head>
 <body>
@@ -212,6 +270,13 @@
         <span class="spinner" id="previewSpinner"></span>
         <span id="previewText">Preview Sort Order</span>
       </button>
+      <div class="tooltip">
+        <button type="button" id="resetButton" class="button reset-button">
+          <span class="spinner" id="resetSpinner"></span>
+          <span id="resetText">Reset/Stop</span>
+        </button>
+        <span class="tooltiptext">Click this to force stop any active/rogue processes and reset the UI</span>
+      </div>
     </div>
   </form>
 
@@ -230,7 +295,7 @@
     </div>
     <div class="step" id="step4">
       <div class="step-icon"></div>
-      <span>Inserting images into sheet</span>
+      <span class="step-text">Inserting images into sheet</span>
     </div>
     <div class="step" id="step5">
       <div class="step-icon"></div>
@@ -253,10 +318,96 @@
   <script>
     let isProcessing = false;
     let isPreviewing = false;
+    let progressPollingInterval = null;
+    let pollingDelay = 3000; // Start with 3 seconds
+    let maxPollingDelay = 10000; // Max 10 seconds
+    let consecutiveNoProgress = 0;
 
-    function updateStepStatus(stepNumber, status) {
+    function updateStepStatus(stepNumber, status, progressText = null) {
       const step = document.getElementById(`step${stepNumber}`);
       step.className = 'step ' + status;
+      
+      // Update step text with progress if provided
+      if (progressText && stepNumber === 4) {
+        const stepText = step.querySelector('.step-text');
+        if (stepText) {
+          stepText.textContent = progressText;
+        }
+      }
+    }
+
+    function startProgressPolling() {
+      if (progressPollingInterval) {
+        clearTimeout(progressPollingInterval);
+      }
+      
+      // Reset polling parameters
+      pollingDelay = 3000;
+      consecutiveNoProgress = 0;
+      
+      pollProgress();
+    }
+
+    function pollProgress() {
+      google.script.run
+        .withSuccessHandler(function(status) {
+          if (status) {
+            // Check if process is complete
+            if (status.isComplete) {
+              // Clean up completion status on server
+              google.script.run.cleanupCompletionStatus();
+              handleImageInsertionResult('completed');
+              return;
+            }
+            
+            // Check if process was stopped
+            if (status.shouldStop && !status.isProcessing) {
+              handleImageInsertionResult('stopped');
+              return;
+            }
+            
+            // Update progress if still processing
+            if (status.isProcessing && status.totalFiles > 0) {
+              const progressText = `Inserting images into sheet - ${status.processedCount} of ${status.totalFiles}`;
+              updateStepStatus(4, 'in-progress', progressText);
+              
+              // Reset delay if we're making progress
+              if (status.processedCount > 0) {
+                pollingDelay = 3000;
+                consecutiveNoProgress = 0;
+              } else {
+                consecutiveNoProgress++;
+              }
+            } else {
+              consecutiveNoProgress++;
+            }
+            
+            // Implement exponential backoff if no progress
+            if (consecutiveNoProgress > 2) {
+              pollingDelay = Math.min(pollingDelay * 1.5, maxPollingDelay);
+            }
+            
+            // Schedule next poll
+            progressPollingInterval = setTimeout(pollProgress, pollingDelay);
+          }
+        })
+        .withFailureHandler(function(error) {
+          console.log('Progress polling error:', error);
+          // Continue polling even on error, but with increased delay
+          pollingDelay = Math.min(pollingDelay * 1.2, maxPollingDelay);
+          progressPollingInterval = setTimeout(pollProgress, pollingDelay);
+        })
+        .getProcessingStatus();
+    }
+
+    function stopProgressPolling() {
+      if (progressPollingInterval) {
+        clearTimeout(progressPollingInterval);
+        progressPollingInterval = null;
+      }
+      // Reset polling parameters
+      pollingDelay = 3000;
+      consecutiveNoProgress = 0;
     }
 
     function toggleLoadingState(isLoading, buttonId, spinnerId, textId, loadingText) {
@@ -271,7 +422,13 @@
         button.disabled = loadingText !== 'Stop';
       } else {
         spinner.style.display = 'none';
-        text.textContent = (buttonId === 'submitButton') ? 'Insert Images' : 'Preview Sort Order';
+        if (buttonId === 'submitButton') {
+          text.textContent = 'Insert Images';
+        } else if (buttonId === 'previewButton') {
+          text.textContent = 'Preview Sort Order';
+        } else if (buttonId === 'resetButton') {
+          text.textContent = 'Reset/Stop';
+        }
         button.disabled = false;
       }
     }
@@ -303,39 +460,56 @@
       updateStepStatus(1, 'in-progress');
 
       google.script.run
-        .withSuccessHandler(function() {
-          updateStepStatus(1, 'completed');
-          updateStepStatus(2, 'in-progress');
+        .withSuccessHandler(function(result) {
+          // Mark all preparation steps as completed
+          updateStepStatus(1, 'completed'); // Initialize
+          updateStepStatus(2, 'completed'); // Collect files
+          updateStepStatus(3, 'completed'); // Sort files
+          
+          // Show initial delay warning modal
+          showInitialDelayModal();
+          
+          // Get and display total file count
           google.script.run
-            .withSuccessHandler(function() {
-              updateStepStatus(2, 'completed');
-              updateStepStatus(3, 'in-progress');
-              google.script.run
-                .withSuccessHandler(function() {
-                  updateStepStatus(3, 'completed');
-                  updateStepStatus(4, 'in-progress');
-                  google.script.run
-                    .withSuccessHandler(handleImageInsertionResult)
-                    .withFailureHandler(handleImageInsertionError)
-                    .handleImageInsertion();
-                })
-                .withFailureHandler(function(error) {
-                  resetForm();
-                  showModal('Failed to sort files: ' + error);
-                })
-                .sortFiles();
+            .withSuccessHandler(function(totalCount) {
+              if (totalCount !== null) {
+                document.getElementById('totalImages').textContent = totalCount;
+              }
             })
             .withFailureHandler(function(error) {
-              resetForm();
-              showModal('Failed to collect files: ' + error);
+              console.log('Failed to get total file count:', error);
             })
-            .collectFiles(folderUrl);
+            .getTotalFileCount();
+          
+          // Start image insertion (already started by insertImagesFromUI)
+          updateStepStatus(4, 'in-progress');
+          startProgressPolling(); // Start polling for progress updates
+          
+          // Handle the result from insertImagesFromUI
+          handleImageInsertionResult(result);
         })
         .withFailureHandler(function(error) {
           resetForm();
-          showModal('Failed to initialize process: ' + error);
+          
+          // Properly extract error message from error objects
+          let errorMessage = 'Unknown error occurred';
+          if (typeof error === 'string') {
+            errorMessage = error;
+          } else if (error && typeof error === 'object') {
+            if (error.message) {
+              errorMessage = error.message;
+            } else if (error.error) {
+              errorMessage = error.error;
+            } else if (error.toString && typeof error.toString === 'function') {
+              errorMessage = error.toString();
+            } else {
+              errorMessage = JSON.stringify(error);
+            }
+          }
+          
+          showModal('Failed to start image insertion: ' + errorMessage);
         })
-        .initializeProcess(folderUrl, startRow, startCol);
+        .insertImagesFromUI(folderUrl, startRow, startCol);
     });
 
     document.getElementById('previewButton').addEventListener('click', function() {
@@ -362,23 +536,76 @@
         .previewSortOrder(folderUrl);
     });
 
+    // Reset button functionality
+    document.getElementById('resetButton').addEventListener('click', function() {
+      if (confirm('Are you sure you want to force reset the system? This will stop all active processes and clear all data.')) {
+        toggleLoadingState(true, 'resetButton', 'resetSpinner', 'resetText', 'Resetting...');
+        
+        google.script.run
+          .withSuccessHandler(function(result) {
+            toggleLoadingState(false, 'resetButton', 'resetSpinner', 'resetText');
+            resetForm();
+            showModal('System has been reset successfully. All processes stopped and data cleared.');
+          })
+          .withFailureHandler(function(error) {
+            toggleLoadingState(false, 'resetButton', 'resetSpinner', 'resetText');
+            console.error('Reset failed:', error);
+            // Still try to reset the UI even if backend reset failed
+            resetForm();
+            showModal('Reset completed with some errors: ' + error + '. UI has been reset.');
+          })
+          .forceResetSystem();
+      }
+    });
+
     function handleImageInsertionResult(result) {
       console.log("Image insertion result:", result);
+      
+      // Check if result is a success object from insertImagesFromUI
+      if (result && typeof result === 'object' && result.success && result.message) {
+        // Process started successfully, continue with progress polling
+        updateStepStatus(4, 'in-progress');
+        // Progress polling is already started, so just continue
+        return;
+      }
+      
+      // Check if result is a legacy success message string
+      if (result && typeof result === 'string' && result.includes('Image insertion started successfully')) {
+        // Process started successfully, continue with progress polling
+        updateStepStatus(4, 'in-progress');
+        // Progress polling is already started, so just continue
+        return;
+      }
+      
+      // Handle other result types (these should come from progress polling, not insertImagesFromUI)
       if (result === 'completed') {
+        stopProgressPolling();
         updateStepStatus(4, 'completed');
+        // Reset step text to original
+        const step4Text = document.querySelector('#step4 .step-text');
+        if (step4Text) {
+          step4Text.textContent = 'Inserting images into sheet';
+        }
         updateStepStatus(5, 'completed');
         isProcessing = false; // Ensure processing flag is reset
         toggleLoadingState(false, 'submitButton', 'submitSpinner', 'submitText');
         document.getElementById('submitButton').value = 'Insert Images';
         document.getElementById('submitText').textContent = 'Insert Images';
         disableForm(false); // Re-enable form inputs
-        showModal('Process completed. All images inserted.');
+        showCompletionModalWithResetGuidance('All images have been successfully inserted into the spreadsheet.');
       } else if (result === 'continuing') {
         updateStepStatus(4, 'in-progress');
+        // Keep progress polling running for continuing processes
       } else if (result === 'stopped') {
+        stopProgressPolling();
         const currentStep = document.querySelector('.step.in-progress');
         if (currentStep) {
           currentStep.className = 'step stopped';
+        }
+        // Reset step text to original
+        const step4Text = document.querySelector('#step4 .step-text');
+        if (step4Text) {
+          step4Text.textContent = 'Inserting images into sheet';
         }
         isProcessing = false;
         toggleLoadingState(false, 'submitButton', 'submitSpinner', 'submitText');
@@ -387,19 +614,59 @@
         disableForm(false);
         showModal('Process stopped by user.');
       } else {
+        stopProgressPolling();
+        // Reset step text to original
+        const step4Text = document.querySelector('#step4 .step-text');
+        if (step4Text) {
+          step4Text.textContent = 'Inserting images into sheet';
+        }
         isProcessing = false;
         toggleLoadingState(false, 'submitButton', 'submitSpinner', 'submitText');
         document.getElementById('submitButton').value = 'Insert Images';
         document.getElementById('submitText').textContent = 'Insert Images';
         disableForm(false);
-        showModal('An error occurred during image insertion: ' + result);
+        
+        // Properly extract error message from error objects
+        let errorMessage = 'Unknown error occurred';
+        if (typeof result === 'string') {
+          errorMessage = result;
+        } else if (result && typeof result === 'object') {
+          if (result.message) {
+            errorMessage = result.message;
+          } else if (result.error) {
+            errorMessage = result.error;
+          } else if (result.toString && typeof result.toString === 'function') {
+            errorMessage = result.toString();
+          } else {
+            errorMessage = JSON.stringify(result);
+          }
+        }
+        
+        showModal('An error occurred during image insertion: ' + errorMessage);
       }
     }
 
     function handleImageInsertionError(error) {
       console.error("Image insertion error:", error);
       resetForm();
-      showModal('Failed to insert images: ' + error);
+      
+      // Properly extract error message from error objects
+      let errorMessage = 'Unknown error occurred';
+      if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error && typeof error === 'object') {
+        if (error.message) {
+          errorMessage = error.message;
+        } else if (error.error) {
+          errorMessage = error.error;
+        } else if (error.toString && typeof error.toString === 'function') {
+          errorMessage = error.toString();
+        } else {
+          errorMessage = JSON.stringify(error);
+        }
+      }
+      
+      showModal('Failed to insert images: ' + errorMessage);
     }
 
     function displaySortedFiles(sortedFiles) {
@@ -470,7 +737,7 @@
         .withSuccessHandler(function(result) {
           if (result) {
             resetForm();
-            showModal('Process stopped by user.');
+            showModal('Process stopped by user. Please click the "Reset/Stop" button before starting a new process to ensure clean state.');
           }
         })
         .stopImageInsertion();
@@ -478,6 +745,7 @@
 
     function resetForm() {
       isProcessing = false;
+      stopProgressPolling();
       toggleLoadingState(false, 'submitButton', 'submitSpinner', 'submitText');
       document.getElementById('submitButton').value = 'Insert Images';
       document.getElementById('submitText').textContent = 'Insert Images';
@@ -496,6 +764,11 @@
       steps.forEach(step => {
         step.className = 'step';
       });
+      // Reset step 4 text to original
+      const step4Text = document.querySelector('#step4 .step-text');
+      if (step4Text) {
+        step4Text.textContent = 'Inserting images into sheet';
+      }
     }
 
     function disableForm(disable) {
@@ -552,6 +825,85 @@
       modal.style.display = 'none';
     }
 
+    function showInitialDelayModal() {
+      const modal = document.getElementById('myModal');
+      const modalMessage = document.getElementById('modalMessage');
+      
+      if (!modal || !modalMessage) {
+        console.error('Modal elements not found');
+        return;
+      }
+      
+      // Clear existing content
+      while (modalMessage.firstChild) {
+        modalMessage.removeChild(modalMessage.firstChild);
+      }
+      
+      // Create warning content
+      const title = document.createElement('h3');
+      title.textContent = '⚠️ Processing Starting';
+      title.style.color = '#856404';
+      modalMessage.appendChild(title);
+      
+      const message = document.createElement('p');
+      message.textContent = 'Due to Google Apps Script limitations, there may be up to a 1-minute delay before image processing begins. Please be patient.';
+      message.style.marginBottom = '15px';
+      modalMessage.appendChild(message);
+      
+      const note = document.createElement('p');
+      note.textContent = 'The process will start automatically once the system is ready.';
+      note.style.fontStyle = 'italic';
+      note.style.color = '#666';
+      modalMessage.appendChild(note);
+      
+      modal.style.display = 'block';
+    }
+
+    function showCompletionModalWithResetGuidance(message) {
+      const modal = document.getElementById('myModal');
+      const modalMessage = document.getElementById('modalMessage');
+      
+      if (!modal || !modalMessage) {
+        console.error('Modal elements not found');
+        return;
+      }
+      
+      // Clear existing content
+      while (modalMessage.firstChild) {
+        modalMessage.removeChild(modalMessage.firstChild);
+      }
+      
+      // Success title
+      const title = document.createElement('h3');
+      title.textContent = '✅ Process Completed Successfully!';
+      title.style.color = '#28a745';
+      modalMessage.appendChild(title);
+      
+      // Main message
+      const mainMessage = document.createElement('p');
+      mainMessage.textContent = message;
+      mainMessage.style.marginBottom = '20px';
+      modalMessage.appendChild(mainMessage);
+      
+      // Reset guidance section
+      const resetTitle = document.createElement('h4');
+      resetTitle.textContent = '🔄 Important: Reset Before Next Use';
+      resetTitle.style.color = '#dc3545';
+      resetTitle.style.marginBottom = '10px';
+      modalMessage.appendChild(resetTitle);
+      
+      const resetMessage = document.createElement('p');
+      resetMessage.textContent = 'Before starting a new process, please click the "Reset/Stop" button to ensure a clean state and optimal performance.';
+      resetMessage.style.backgroundColor = '#f8d7da';
+      resetMessage.style.border = '1px solid #f5c6cb';
+      resetMessage.style.borderRadius = '4px';
+      resetMessage.style.padding = '10px';
+      resetMessage.style.fontWeight = 'bold';
+      modalMessage.appendChild(resetMessage);
+      
+      modal.style.display = 'block';
+    }
+
     window.onclick = function(event) {
       const modal = document.getElementById('myModal');
       if (event.target == modal) {
@@ -559,5 +911,11 @@
       }
     }
   </script>
+
+  <footer style="text-align: center; padding: 20px; margin-top: 30px; border-top: 1px solid #e0e0e0; color: #666; font-size: 12px;">
+    Built by Astra Lumen Images Inc - 
+    <a href="https://astralumen.co/" target="_blank" style="color: #4285f4; text-decoration: none;">Website</a> - 
+    <a href="https://github.com/matteoveglia/GSheets_InsertThumbnails" target="_blank" style="color: #4285f4; text-decoration: none;">GitHub</a>
+  </footer>
 </body>
 </html>
