@@ -192,13 +192,13 @@
       padding: 10px 20px;
       border-radius: 4px;
       cursor: pointer;
-      font-size: 14px;
-      margin-top: 10px;
-      display: flex;
+      font-weight: 500;
+      display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 8px;
       min-width: 120px;
-      justify-content: center;
+      transition: background-color 0.2s;
     }
     .reset-button:hover {
       background-color: #c82333;
@@ -295,7 +295,7 @@
     </div>
     <div class="step" id="step4">
       <div class="step-icon"></div>
-      <span>Inserting images into sheet</span>
+      <span class="step-text">Inserting images into sheet</span>
     </div>
     <div class="step" id="step5">
       <div class="step-icon"></div>
@@ -318,10 +318,61 @@
   <script>
     let isProcessing = false;
     let isPreviewing = false;
+    let progressPollingInterval = null;
 
-    function updateStepStatus(stepNumber, status) {
+    function updateStepStatus(stepNumber, status, progressText = null) {
       const step = document.getElementById(`step${stepNumber}`);
       step.className = 'step ' + status;
+      
+      // Update step text with progress if provided
+      if (progressText && stepNumber === 4) {
+        const stepText = step.querySelector('.step-text');
+        if (stepText) {
+          stepText.textContent = progressText;
+        }
+      }
+    }
+
+    function startProgressPolling() {
+      if (progressPollingInterval) {
+        clearInterval(progressPollingInterval);
+      }
+      
+      progressPollingInterval = setInterval(function() {
+        google.script.run
+          .withSuccessHandler(function(status) {
+            if (status) {
+              // Check if process is complete
+              if (status.isComplete) {
+                handleImageInsertionResult('completed');
+                return;
+              }
+              
+              // Check if process was stopped
+              if (status.shouldStop && !status.isProcessing) {
+                handleImageInsertionResult('stopped');
+                return;
+              }
+              
+              // Update progress if still processing
+              if (status.isProcessing && status.totalFiles > 0) {
+                const progressText = `Inserting images into sheet - ${status.processedCount} of ${status.totalFiles}`;
+                updateStepStatus(4, 'in-progress', progressText);
+              }
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.log('Progress polling error:', error);
+          })
+          .getProcessingStatus();
+      }, 2000); // Poll every 2 seconds
+    }
+
+    function stopProgressPolling() {
+      if (progressPollingInterval) {
+        clearInterval(progressPollingInterval);
+        progressPollingInterval = null;
+      }
     }
 
     function toggleLoadingState(isLoading, buttonId, spinnerId, textId, loadingText) {
@@ -392,12 +443,12 @@
             })
             .getTotalFileCount();
           
-          // Start image insertion
+          // Start image insertion (already started by insertImagesFromUI)
           updateStepStatus(4, 'in-progress');
-          google.script.run
-            .withSuccessHandler(handleImageInsertionResult)
-            .withFailureHandler(handleImageInsertionError)
-            .handleImageInsertion();
+          startProgressPolling(); // Start polling for progress updates
+          
+          // Handle the result from insertImagesFromUI
+          handleImageInsertionResult(result);
         })
         .withFailureHandler(function(error) {
           resetForm();
@@ -454,8 +505,24 @@
 
     function handleImageInsertionResult(result) {
       console.log("Image insertion result:", result);
+      
+      // Check if result is a success message from insertImagesFromUI
+      if (result && typeof result === 'string' && result.includes('Image insertion started successfully')) {
+        // Process started successfully, continue with progress polling
+        updateStepStatus(4, 'in-progress');
+        // Progress polling is already started, so just continue
+        return;
+      }
+      
+      // Handle other result types (these should come from progress polling, not insertImagesFromUI)
       if (result === 'completed') {
+        stopProgressPolling();
         updateStepStatus(4, 'completed');
+        // Reset step text to original
+        const step4Text = document.querySelector('#step4 .step-text');
+        if (step4Text) {
+          step4Text.textContent = 'Inserting images into sheet';
+        }
         updateStepStatus(5, 'completed');
         isProcessing = false; // Ensure processing flag is reset
         toggleLoadingState(false, 'submitButton', 'submitSpinner', 'submitText');
@@ -465,10 +532,17 @@
         showModal('Process completed. All images inserted.');
       } else if (result === 'continuing') {
         updateStepStatus(4, 'in-progress');
+        // Keep progress polling running for continuing processes
       } else if (result === 'stopped') {
+        stopProgressPolling();
         const currentStep = document.querySelector('.step.in-progress');
         if (currentStep) {
           currentStep.className = 'step stopped';
+        }
+        // Reset step text to original
+        const step4Text = document.querySelector('#step4 .step-text');
+        if (step4Text) {
+          step4Text.textContent = 'Inserting images into sheet';
         }
         isProcessing = false;
         toggleLoadingState(false, 'submitButton', 'submitSpinner', 'submitText');
@@ -477,6 +551,12 @@
         disableForm(false);
         showModal('Process stopped by user.');
       } else {
+        stopProgressPolling();
+        // Reset step text to original
+        const step4Text = document.querySelector('#step4 .step-text');
+        if (step4Text) {
+          step4Text.textContent = 'Inserting images into sheet';
+        }
         isProcessing = false;
         toggleLoadingState(false, 'submitButton', 'submitSpinner', 'submitText');
         document.getElementById('submitButton').value = 'Insert Images';
@@ -568,14 +648,12 @@
 
     function resetForm() {
       isProcessing = false;
-      stopPerformancePolling();
+      stopProgressPolling();
       toggleLoadingState(false, 'submitButton', 'submitSpinner', 'submitText');
       document.getElementById('submitButton').value = 'Insert Images';
       document.getElementById('submitText').textContent = 'Insert Images';
       disableForm(false);
       resetChecklist();
-      resetPerformanceMetrics();
-      document.getElementById('performanceMetrics').style.display = 'none';
     }
 
     function updateChecklist(stepId, status) {
@@ -589,6 +667,11 @@
       steps.forEach(step => {
         step.className = 'step';
       });
+      // Reset step 4 text to original
+      const step4Text = document.querySelector('#step4 .step-text');
+      if (step4Text) {
+        step4Text.textContent = 'Inserting images into sheet';
+      }
     }
 
     function disableForm(disable) {
