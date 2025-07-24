@@ -344,6 +344,8 @@
             if (status) {
               // Check if process is complete
               if (status.isComplete) {
+                // Clean up completion status on server
+                google.script.run.cleanupCompletionStatus();
                 handleImageInsertionResult('completed');
                 return;
               }

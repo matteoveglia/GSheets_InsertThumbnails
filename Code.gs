@@ -1126,16 +1126,29 @@ function getProcessingStatus() {
     const props = SCRIPT_PROPERTIES.getProperties();
     const isProcessing = props.processingBatch === 'true';
     const shouldStop = props.shouldStop === 'true';
+    const isComplete = props.isComplete === 'true';
     const lastProcessedIndex = parseInt(props.lastProcessedIndex || '-1');
     const fileListJson = props.fileList;
     
     let totalFiles = 0;
-    let isComplete = false;
     
     if (fileListJson) {
       const fileList = JSON.parse(fileListJson);
       totalFiles = fileList.length;
-      isComplete = !isProcessing && (lastProcessedIndex + 1) >= totalFiles;
+      
+      // If not explicitly marked complete, check if all files processed
+      if (!isComplete && !isProcessing && (lastProcessedIndex + 1) >= totalFiles) {
+        // Mark as complete if all files processed but flag not set
+        SCRIPT_PROPERTIES.setProperty('isComplete', 'true');
+        return {
+          isProcessing: false,
+          shouldStop: shouldStop,
+          isComplete: true,
+          processedCount: lastProcessedIndex + 1,
+          totalFiles: totalFiles,
+          progressPercentage: 100
+        };
+      }
     }
     
     return {
@@ -1164,8 +1177,27 @@ function cleanupAfterCompletion() {
   try {
     logWithContext('INFO', 'Starting cleanup after completion', {});
     
+    // Set completion flags - keep processingBatch true until the very end
+    SCRIPT_PROPERTIES.setProperty('isComplete', 'true');
+    SCRIPT_PROPERTIES.setProperty('shouldStop', 'false');
+    
     cleanupExistingTriggers();
-    SCRIPT_PROPERTIES.deleteAllProperties();
+    
+    // Clean up processing-related properties but keep completion status
+    const propsToDelete = [
+      'currentTriggerId',
+      'batchSize',
+      'currentBatchIndex',
+      'processingStartTime'
+    ];
+    
+    propsToDelete.forEach(prop => {
+      try {
+        SCRIPT_PROPERTIES.deleteProperty(prop);
+      } catch (e) {
+        // Ignore individual deletion errors
+      }
+    });
     
     if (CACHE) {
       try {
@@ -1179,17 +1211,46 @@ function cleanupAfterCompletion() {
     // Force final garbage collection hint
     Utilities.sleep(GARBAGE_COLLECTION_HINT_DELAY * 3);
     
+    // Only set processingBatch to false at the very end
+    SCRIPT_PROPERTIES.setProperty('processingBatch', 'false');
+    
     logWithContext('INFO', 'Cleanup completed successfully', {});
   } catch (error) {
     logWithContext('ERROR', 'Error during cleanup', { error: error.message });
   } finally {
-    // Ensure these flags are cleared even if there's an error
+    // Ensure processingBatch is set to false even if there's an error
     try {
       SCRIPT_PROPERTIES.setProperty('processingBatch', 'false');
-      SCRIPT_PROPERTIES.setProperty('shouldStop', 'false');
     } catch (finalError) {
-      Logger.log('Final cleanup error: ' + finalError.message);
+      logWithContext('ERROR', 'Failed to set processingBatch to false in finally block', { error: finalError.message });
     }
+  }
+}
+
+/**
+ * Clean up completion status after UI has detected it
+ */
+function cleanupCompletionStatus() {
+  try {
+    const propsToDelete = [
+      'isComplete',
+      'fileList',
+      'lastProcessedIndex',
+      'processingBatch',
+      'shouldStop'
+    ];
+    
+    propsToDelete.forEach(prop => {
+      try {
+        SCRIPT_PROPERTIES.deleteProperty(prop);
+      } catch (e) {
+        // Ignore individual deletion errors
+      }
+    });
+    
+    logWithContext('INFO', 'Completion status cleaned up', {});
+  } catch (error) {
+    logWithContext('WARN', 'Failed to clean up completion status', { error: error.message });
   }
 }
 
