@@ -857,21 +857,19 @@ function insertImagesFromUI(folderUrl, startRow, startCol) {
       { folderUrl: folderUrl }
     );
     
-    // Start image insertion process
+    // Start image insertion process immediately (no trigger delay)
+    logWithContext('INFO', 'Starting image insertion process directly', { 
+      totalFiles: preview.length,
+      startRow: startRow,
+      startCol: startCol 
+    });
+    
+    // Call handleImageInsertion directly to avoid trigger delays
     executeWithRetry(
       () => {
-        const trigger = ScriptApp.newTrigger('handleImageInsertion')
-          .timeBased()
-          .after(1000)
-          .create();
-        
-        SCRIPT_PROPERTIES.setProperty('currentTriggerId', trigger.getUniqueId());
-        
-        logWithContext('INFO', 'Image insertion trigger created', { 
-          triggerId: trigger.getUniqueId() 
-        });
+        handleImageInsertion();
       },
-      'create insertion trigger',
+      'start image insertion',
       {}
     );
     
@@ -1237,7 +1235,17 @@ function cleanupCompletionStatus() {
       'fileList',
       'lastProcessedIndex',
       'processingBatch',
-      'shouldStop'
+      'shouldStop',
+      'folderUrl',
+      'sheetId',
+      'spreadsheetId',
+      'startCol',
+      'startRow',
+      'currentTriggerId',
+      'batchSize',
+      'currentBatchIndex',
+      'processingStartTime',
+      'partialCollection'
     ];
     
     propsToDelete.forEach(prop => {
@@ -1248,7 +1256,9 @@ function cleanupCompletionStatus() {
       }
     });
     
-    logWithContext('INFO', 'Completion status cleaned up', {});
+    logWithContext('INFO', 'All completion status and process properties cleaned up', { 
+      deletedProperties: propsToDelete.length 
+    });
   } catch (error) {
     logWithContext('WARN', 'Failed to clean up completion status', { error: error.message });
   }
@@ -1521,7 +1531,7 @@ function handleImageInsertion() {
         () => {
           const trigger = ScriptApp.newTrigger('handleImageInsertion')
             .timeBased()
-            .after(2000) // 2 second delay
+            .after(1000) // 1 second delay for continuation
             .create();
           
           SCRIPT_PROPERTIES.setProperty('currentTriggerId', trigger.getUniqueId());
@@ -1545,7 +1555,7 @@ function handleImageInsertion() {
      });
     
     // Small delay to prevent overwhelming the system
-    Utilities.sleep(500);
+    Utilities.sleep(200);
     
     // Recursive call for next batch
     handleImageInsertion();
