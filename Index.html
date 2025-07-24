@@ -487,7 +487,24 @@
         })
         .withFailureHandler(function(error) {
           resetForm();
-          showModal('Failed to start image insertion: ' + error);
+          
+          // Properly extract error message from error objects
+          let errorMessage = 'Unknown error occurred';
+          if (typeof error === 'string') {
+            errorMessage = error;
+          } else if (error && typeof error === 'object') {
+            if (error.message) {
+              errorMessage = error.message;
+            } else if (error.error) {
+              errorMessage = error.error;
+            } else if (error.toString && typeof error.toString === 'function') {
+              errorMessage = error.toString();
+            } else {
+              errorMessage = JSON.stringify(error);
+            }
+          }
+          
+          showModal('Failed to start image insertion: ' + errorMessage);
         })
         .insertImagesFromUI(folderUrl, startRow, startCol);
     });
@@ -541,7 +558,15 @@
     function handleImageInsertionResult(result) {
       console.log("Image insertion result:", result);
       
-      // Check if result is a success message from insertImagesFromUI
+      // Check if result is a success object from insertImagesFromUI
+      if (result && typeof result === 'object' && result.success && result.message) {
+        // Process started successfully, continue with progress polling
+        updateStepStatus(4, 'in-progress');
+        // Progress polling is already started, so just continue
+        return;
+      }
+      
+      // Check if result is a legacy success message string
       if (result && typeof result === 'string' && result.includes('Image insertion started successfully')) {
         // Process started successfully, continue with progress polling
         updateStepStatus(4, 'in-progress');
@@ -597,14 +622,48 @@
         document.getElementById('submitButton').value = 'Insert Images';
         document.getElementById('submitText').textContent = 'Insert Images';
         disableForm(false);
-        showModal('An error occurred during image insertion: ' + result);
+        
+        // Properly extract error message from error objects
+        let errorMessage = 'Unknown error occurred';
+        if (typeof result === 'string') {
+          errorMessage = result;
+        } else if (result && typeof result === 'object') {
+          if (result.message) {
+            errorMessage = result.message;
+          } else if (result.error) {
+            errorMessage = result.error;
+          } else if (result.toString && typeof result.toString === 'function') {
+            errorMessage = result.toString();
+          } else {
+            errorMessage = JSON.stringify(result);
+          }
+        }
+        
+        showModal('An error occurred during image insertion: ' + errorMessage);
       }
     }
 
     function handleImageInsertionError(error) {
       console.error("Image insertion error:", error);
       resetForm();
-      showModal('Failed to insert images: ' + error);
+      
+      // Properly extract error message from error objects
+      let errorMessage = 'Unknown error occurred';
+      if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error && typeof error === 'object') {
+        if (error.message) {
+          errorMessage = error.message;
+        } else if (error.error) {
+          errorMessage = error.error;
+        } else if (error.toString && typeof error.toString === 'function') {
+          errorMessage = error.toString();
+        } else {
+          errorMessage = JSON.stringify(error);
+        }
+      }
+      
+      showModal('Failed to insert images: ' + errorMessage);
     }
 
     function displaySortedFiles(sortedFiles) {

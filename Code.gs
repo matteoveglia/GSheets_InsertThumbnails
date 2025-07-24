@@ -356,14 +356,14 @@ function validateRowCol(row, col) {
 
 // Performance configuration
 const PERFORMANCE_CONFIG = {
-  // Adaptive batch sizing
-  minBatchSize: 3,
-  maxBatchSize: 15,
-  defaultBatchSize: 8,
+  // Adaptive batch sizing - reduced for better stop responsiveness
+  minBatchSize: 1,
+  maxBatchSize: 8,
+  defaultBatchSize: 4,
   
-  // Performance thresholds (milliseconds)
-  targetProcessingTime: 4000, // 4 seconds per batch
-  maxProcessingTime: 5500,    // 5.5 seconds max
+  // Performance thresholds (milliseconds) - reduced for better responsiveness
+  targetProcessingTime: 2500, // 2.5 seconds per batch
+  maxProcessingTime: 3500,    // 3.5 seconds max
   
   // Cache configuration
   cacheExpirationHours: 24,
@@ -619,6 +619,15 @@ class AdaptiveBatchProcessor {
       const endIndex = Math.min(startIndex + this.currentBatchSize, fileList.length);
       
       for (let i = startIndex; i < endIndex; i++) {
+        // Check for stop flag first for immediate responsiveness
+        if (SCRIPT_PROPERTIES.getProperty('shouldStop') === 'true') {
+          logWithContext('INFO', 'Stop requested during batch processing', {
+            processedInBatch: processedCount,
+            currentIndex: i
+          });
+          break;
+        }
+        
         if (isTimeUp()) {
           logWithContext('WARN', 'Time limit reached during batch processing', {
             processedInBatch: processedCount,
@@ -632,6 +641,15 @@ class AdaptiveBatchProcessor {
         try {
           // Process single image with caching
           const result = this.processSingleImageWithCache(fileList[i], spreadsheetId, sheetId, startRow, startCol, i);
+          
+          // Check if processing was stopped
+          if (result.stopped) {
+            logWithContext('INFO', 'Processing stopped during image processing', {
+              processedInBatch: processedCount,
+              currentIndex: i
+            });
+            break;
+          }
           
           if (result.success) {
             processedCount++;
@@ -692,6 +710,15 @@ class AdaptiveBatchProcessor {
    */
   processSingleImageWithCache(fileObj, spreadsheetId, sheetId, startRow, startCol, index) {
     try {
+      // Check for stop flag immediately for better responsiveness
+      if (SCRIPT_PROPERTIES.getProperty('shouldStop') === 'true') {
+        logWithContext('DEBUG', 'Stop requested during single image processing', {
+          fileId: fileObj.fileId,
+          index: index
+        });
+        return { success: false, stopped: true };
+      }
+      
       // Check cache first
       const cachedImage = this.enhancedCache.get(fileObj.fileId, MAX_IMAGE_WIDTH);
       
@@ -839,47 +866,38 @@ function insertImagesFromUI(folderUrl, startRow, startCol) {
       {}
     );
     
-    // Store sheet information
-    SCRIPT_PROPERTIES.setProperties({
-      'spreadsheetId': spreadsheet.getId(),
-      'sheetId': sheet.getSheetId().toString(),
-      'startRow': startRow.toString(),
-      'startCol': startCol.toString(),
-      'processingBatch': 'true',
-      'shouldStop': 'false',
-      'lastProcessedIndex': '-1'
-    });
-    
-    // Collect and sort files with error handling
+    // Collect and sort files with error handling first
     const preview = executeWithRetry(
       () => collectAndSortFiles(folderUrl),
       'collect and sort files',
       { folderUrl: folderUrl }
     );
     
-    // Start image insertion process immediately (no trigger delay)
-    logWithContext('INFO', 'Starting image insertion process directly', { 
+    // Store sheet information and processing state
+    SCRIPT_PROPERTIES.setProperties({
+      'spreadsheetId': spreadsheet.getId(),
+      'sheetId': sheet.getSheetId().toString(),
+      'startRow': startRow.toString(),
+      'startCol': startCol.toString(),
+      'processingBatch': 'starting', // Use 'starting' state for UI detection
+      'shouldStop': 'false',
+      'lastProcessedIndex': '-1',
+      'readyToProcess': 'true' // Flag to indicate processing should begin
+    });
+    
+    logWithContext('INFO', 'Processing setup complete, UI can start polling', { 
       totalFiles: preview.length,
       startRow: startRow,
       startCol: startCol 
     });
     
-    // Call handleImageInsertion directly to avoid trigger delays
-    executeWithRetry(
-      () => {
-        handleImageInsertion();
-      },
-      'start image insertion',
-      {}
-    );
-    
-    logWithContext('INFO', 'Image insertion process started successfully', { 
-      totalFiles: preview.length,
-      startRow: startRow,
-      startCol: startCol 
-    });
-    
-    return 'Image insertion started successfully. Processing ' + preview.length + ' files.';
+    // Return immediately to allow UI polling to start
+    // Processing will begin when getProcessingStatus detects readyToProcess flag
+    return {
+      success: true,
+      message: `Setup complete. Processing ${preview.length} images will begin shortly.`,
+      totalFiles: preview.length
+    };
     
   } catch (error) {
     logWithContext('ERROR', 'Failed to start image insertion', { 
@@ -1122,11 +1140,39 @@ function previewSortedFiles() {
 function getProcessingStatus() {
   try {
     const props = SCRIPT_PROPERTIES.getProperties();
-    const isProcessing = props.processingBatch === 'true';
+    const processingState = props.processingBatch;
+    const isProcessing = processingState === 'true' || processingState === 'starting';
     const shouldStop = props.shouldStop === 'true';
     const isComplete = props.isComplete === 'true';
     const lastProcessedIndex = parseInt(props.lastProcessedIndex || '-1');
     const fileListJson = props.fileList;
+    const readyToProcess = props.readyToProcess === 'true';
+    
+    // If we're ready to process and UI is polling, start processing immediately
+    if (readyToProcess && !isComplete && !shouldStop) {
+      logWithContext('INFO', 'UI polling detected, starting image processing immediately', {});
+      
+      // Clear the readyToProcess flag to prevent multiple starts
+      SCRIPT_PROPERTIES.deleteProperty('readyToProcess');
+      
+      // Start processing asynchronously using a minimal trigger
+      try {
+        const trigger = ScriptApp.newTrigger('handleImageInsertion')
+          .timeBased()
+          .after(1) // 1ms - minimal delay just to make it async
+          .create();
+        
+        SCRIPT_PROPERTIES.setProperty('currentTriggerId', trigger.getUniqueId());
+        
+        logWithContext('INFO', 'Processing trigger created', {
+          triggerId: trigger.getUniqueId()
+        });
+      } catch (triggerError) {
+        logWithContext('ERROR', 'Failed to create processing trigger', {
+          error: triggerError.message
+        });
+      }
+    }
     
     let totalFiles = 0;
     
@@ -1429,9 +1475,15 @@ function handleImageInsertion() {
     
     // Check if we're still processing
     const isProcessing = SCRIPT_PROPERTIES.getProperty('processingBatch');
-    if (isProcessing !== 'true') {
-      logWithContext('WARN', 'Processing batch flag not set, exiting', {});
+    if (isProcessing !== 'true' && isProcessing !== 'starting') {
+      logWithContext('WARN', 'Processing batch flag not set, exiting', { processingBatch: isProcessing });
       return;
+    }
+    
+    // If we're in 'starting' state, change to 'true' to indicate active processing
+    if (isProcessing === 'starting') {
+      SCRIPT_PROPERTIES.setProperty('processingBatch', 'true');
+      logWithContext('INFO', 'Changed processing state from starting to active', {});
     }
     
     // Get processing parameters
