@@ -308,12 +308,6 @@
     <p style="margin: 0"> Due to Google's limitations, the script will automatically stop after 90 minutes. For large folders, you may need to run it multiple times.</p>
   </div>
 
-  <div class="info-box" style="background-color: #fff3cd; border-color: #ffeaa7; color: #856404;">
-    <p style="margin: 0; font-weight: bold;">⚠️ Important Notes:</p>
-    <p style="margin: 5px 0 0 0;">• <strong>Initial Delay:</strong> Due to Google Apps Script limitations, there may be up to a 1-minute delay before processing begins after clicking "Insert Images".</p>
-    <p style="margin: 5px 0 0 0;">• <strong>After Stopping:</strong> If you stop the process, please click the "Reset/Stop" button before starting a new process to ensure clean state.</p>
-  </div>
-
   <div id="myModal" class="modal">
     <div class="modal-content">
       <span class="close" onclick="closeModal()">&times;</span>
@@ -472,6 +466,9 @@
           updateStepStatus(2, 'completed'); // Collect files
           updateStepStatus(3, 'completed'); // Sort files
           
+          // Show initial delay warning modal
+          showInitialDelayModal();
+          
           // Get and display total file count
           google.script.run
             .withSuccessHandler(function(totalCount) {
@@ -595,7 +592,7 @@
         document.getElementById('submitButton').value = 'Insert Images';
         document.getElementById('submitText').textContent = 'Insert Images';
         disableForm(false); // Re-enable form inputs
-        showModal('Process completed. All images inserted.');
+        showCompletionModalWithResetGuidance('All images have been successfully inserted into the spreadsheet.');
       } else if (result === 'continuing') {
         updateStepStatus(4, 'in-progress');
         // Keep progress polling running for continuing processes
@@ -828,6 +825,85 @@
       modal.style.display = 'none';
     }
 
+    function showInitialDelayModal() {
+      const modal = document.getElementById('myModal');
+      const modalMessage = document.getElementById('modalMessage');
+      
+      if (!modal || !modalMessage) {
+        console.error('Modal elements not found');
+        return;
+      }
+      
+      // Clear existing content
+      while (modalMessage.firstChild) {
+        modalMessage.removeChild(modalMessage.firstChild);
+      }
+      
+      // Create warning content
+      const title = document.createElement('h3');
+      title.textContent = '⚠️ Processing Starting';
+      title.style.color = '#856404';
+      modalMessage.appendChild(title);
+      
+      const message = document.createElement('p');
+      message.textContent = 'Due to Google Apps Script limitations, there may be up to a 1-minute delay before image processing begins. Please be patient.';
+      message.style.marginBottom = '15px';
+      modalMessage.appendChild(message);
+      
+      const note = document.createElement('p');
+      note.textContent = 'The process will start automatically once the system is ready.';
+      note.style.fontStyle = 'italic';
+      note.style.color = '#666';
+      modalMessage.appendChild(note);
+      
+      modal.style.display = 'block';
+    }
+
+    function showCompletionModalWithResetGuidance(message) {
+      const modal = document.getElementById('myModal');
+      const modalMessage = document.getElementById('modalMessage');
+      
+      if (!modal || !modalMessage) {
+        console.error('Modal elements not found');
+        return;
+      }
+      
+      // Clear existing content
+      while (modalMessage.firstChild) {
+        modalMessage.removeChild(modalMessage.firstChild);
+      }
+      
+      // Success title
+      const title = document.createElement('h3');
+      title.textContent = '✅ Process Completed Successfully!';
+      title.style.color = '#28a745';
+      modalMessage.appendChild(title);
+      
+      // Main message
+      const mainMessage = document.createElement('p');
+      mainMessage.textContent = message;
+      mainMessage.style.marginBottom = '20px';
+      modalMessage.appendChild(mainMessage);
+      
+      // Reset guidance section
+      const resetTitle = document.createElement('h4');
+      resetTitle.textContent = '🔄 Important: Reset Before Next Use';
+      resetTitle.style.color = '#dc3545';
+      resetTitle.style.marginBottom = '10px';
+      modalMessage.appendChild(resetTitle);
+      
+      const resetMessage = document.createElement('p');
+      resetMessage.textContent = 'Before starting a new process, please click the "Reset/Stop" button to ensure a clean state and optimal performance.';
+      resetMessage.style.backgroundColor = '#f8d7da';
+      resetMessage.style.border = '1px solid #f5c6cb';
+      resetMessage.style.borderRadius = '4px';
+      resetMessage.style.padding = '10px';
+      resetMessage.style.fontWeight = 'bold';
+      modalMessage.appendChild(resetMessage);
+      
+      modal.style.display = 'block';
+    }
+
     window.onclick = function(event) {
       const modal = document.getElementById('myModal');
       if (event.target == modal) {
@@ -835,5 +911,11 @@
       }
     }
   </script>
+
+  <footer style="text-align: center; padding: 20px; margin-top: 30px; border-top: 1px solid #e0e0e0; color: #666; font-size: 12px;">
+    Built by Astra Lumen Images Inc - 
+    <a href="https://astralumen.co/" target="_blank" style="color: #4285f4; text-decoration: none;">Website</a> - 
+    <a href="https://github.com/matteoveglia/GSheets_InsertThumbnails" target="_blank" style="color: #4285f4; text-decoration: none;">GitHub</a>
+  </footer>
 </body>
 </html>
