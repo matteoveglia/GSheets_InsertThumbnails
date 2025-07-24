@@ -308,6 +308,12 @@
     <p style="margin: 0"> Due to Google's limitations, the script will automatically stop after 90 minutes. For large folders, you may need to run it multiple times.</p>
   </div>
 
+  <div class="info-box" style="background-color: #fff3cd; border-color: #ffeaa7; color: #856404;">
+    <p style="margin: 0; font-weight: bold;">⚠️ Important Notes:</p>
+    <p style="margin: 5px 0 0 0;">• <strong>Initial Delay:</strong> Due to Google Apps Script limitations, there may be up to a 1-minute delay before processing begins after clicking "Insert Images".</p>
+    <p style="margin: 5px 0 0 0;">• <strong>After Stopping:</strong> If you stop the process, please click the "Reset/Stop" button before starting a new process to ensure clean state.</p>
+  </div>
+
   <div id="myModal" class="modal">
     <div class="modal-content">
       <span class="close" onclick="closeModal()">&times;</span>
@@ -734,7 +740,7 @@
         .withSuccessHandler(function(result) {
           if (result) {
             resetForm();
-            showModal('Process stopped by user.');
+            showModal('Process stopped by user. Please click the "Reset/Stop" button before starting a new process to ensure clean state.');
           }
         })
         .stopImageInsertion();

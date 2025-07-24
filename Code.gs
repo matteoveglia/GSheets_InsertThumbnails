@@ -1856,10 +1856,55 @@ function showUI() {
 }
 
 function onOpen() {
+  // Initialize system on first launch
+  initializeSystemOnFirstLaunch();
+  
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('Custom Tools')
       .addItem('Insert Thumbnails from GDrive', 'showUI')
       .addToUi();
+}
+
+/**
+ * Initialize system on first launch to ensure clean state
+ * This runs every time the spreadsheet is opened to prevent stuck states
+ */
+function initializeSystemOnFirstLaunch() {
+  try {
+    // Check if there are any existing properties that might indicate a stuck state
+    const properties = SCRIPT_PROPERTIES.getProperties();
+    const hasStuckState = properties.processingBatch === 'true' || 
+                         properties.shouldStop === 'true' ||
+                         properties.currentTriggerId ||
+                         properties.fileList;
+    
+    if (hasStuckState) {
+      logWithContext('INFO', 'Detected potential stuck state on launch, performing cleanup', {
+        processingBatch: properties.processingBatch,
+        shouldStop: properties.shouldStop,
+        hasTriggerId: !!properties.currentTriggerId,
+        hasFileList: !!properties.fileList
+      });
+      
+      // Clean up any stuck state
+      cleanupExistingTriggers();
+      SCRIPT_PROPERTIES.deleteAllProperties();
+      
+      // Clear cache
+      try {
+        CacheService.getScriptCache().removeAll(['img_*', 'performance_metrics']);
+      } catch (cacheError) {
+        logWithContext('WARN', 'Cache cleanup failed during initialization', { error: cacheError.message });
+      }
+      
+      logWithContext('INFO', 'System initialization cleanup completed', {});
+    } else {
+      logWithContext('DEBUG', 'System state is clean on launch', {});
+    }
+    
+  } catch (error) {
+    logWithContext('ERROR', 'System initialization failed', { error: error.message });
+  }
 }
 
 function cleanupAfterStop() {
