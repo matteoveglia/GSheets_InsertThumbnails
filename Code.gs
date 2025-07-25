@@ -1851,7 +1851,7 @@ function forceResetSystem() {
 function showUI() {
   var html = HtmlService.createHtmlOutputFromFile('index')
       .setWidth(650)
-      .setHeight(590);
+      .setHeight(595);
   SpreadsheetApp.getUi().showModalDialog(html, 'Insert Thumbnails');
 }
 
